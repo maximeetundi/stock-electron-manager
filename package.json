@@ -1,0 +1,79 @@
+{
+  "name": "ecole-finances",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Application de gestion financière pour complexe scolaire (Electron + React + SQLite)",
+  "main": "electron/main.js",
+  "author": "Maxime ETUNDI",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
+    "build": "vite build",
+    "build:electron": "cross-env NODE_ENV=production electron-builder",
+    "package": "npm run build && npm run build:electron",
+    "postinstall": "electron-builder install-app-deps",
+    "lint": "echo \"No lint configuration yet\""
+  },
+  "build": {
+    "appId": "com.ecole.finances",
+    "productName": "Ecole Finances",
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.finance"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Finance"
+    }
+  },
+  "dependencies": {
+    "@heroicons/react": "^2.1.5",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "classnames": "^2.5.1",
+    "date-fns": "^3.6.0",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.1",
+    "prop-types": "^15.8.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "recharts": "^2.7.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.3.0",
+    "electron-builder": "^24.13.3",
+    "electron-rebuild": "^3.2.9",
+    "postcss": "^8.4.45",
+    "tailwindcss": "^3.4.14",
+    "vite": "^5.4.7",
+    "wait-on": "^7.2.0"
+  }
+}
