@@ -1,16 +1,20 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './state/AuthContext.jsx';
 import './index.css';
 
+// In packaged Electron, the app runs with file:// protocol. BrowserRouter will try to resolve
+// "/login" as file://c:/login (ERR_FILE_NOT_FOUND). Use HashRouter in that case.
+const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter;
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <Router>
       <AuthProvider>
         <App />
       </AuthProvider>
-    </BrowserRouter>
+    </Router>
   </React.StrictMode>
 );

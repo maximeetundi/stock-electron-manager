@@ -34,7 +34,8 @@
       "output": "dist-electron"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icons/icon.png"
     },
     "mac": {
       "target": "dmg",
@@ -50,7 +51,7 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.1.5",
-    "bcryptjs": "^2.4.3",
+      "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.8.1",
     "classnames": "^2.5.1",
     "date-fns": "^3.6.0",

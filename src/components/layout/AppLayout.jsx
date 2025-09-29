@@ -13,13 +13,16 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/state/AuthContext.jsx';
 import classNames from 'classnames';
+import pkg from '../../../package.json';
 
 const navigation = [
   { name: 'Dashboard', to: '/', icon: ChartPieIcon },
   { name: 'Nouvelle opération', to: '/operations', icon: BanknotesIcon },
   { name: 'Statistiques', to: '/statistiques', icon: DocumentChartBarIcon },
   { name: 'Rapports', to: '/rapports', icon: DocumentArrowDownIcon },
-  { name: 'Paramètres', to: '/parametres', icon: Cog6ToothIcon }
+  { name: 'Sauvegarde', to: '/sauvegarde', icon: DocumentArrowDownIcon },
+  { name: 'Paramètres', to: '/parametres', icon: Cog6ToothIcon },
+  { name: 'À propos', to: '/apropos', icon: Bars3BottomLeftIcon }
 ];
 
 export default function AppLayout() {
@@ -82,12 +85,14 @@ export default function AppLayout() {
             <ArrowLeftOnRectangleIcon className="h-5 w-5" />
             Se déconnecter
           </button>
+          <div className="mt-3 text-center text-xs text-slate-400">
+            Version {pkg?.version || '0.0.0'}
+          </div>
         </div>
       </aside>
       <div className="flex flex-1 flex-col">
         <header className="flex h-20 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Section active</p>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
               {navigation.find((item) => item.to === location.pathname)?.name || 'Tableau de bord'}
             </h2>

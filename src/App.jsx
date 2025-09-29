@@ -7,6 +7,8 @@ import NewTransactionPage from '@/pages/NewTransactionPage.jsx';
 import StatisticsPage from '@/pages/StatisticsPage.jsx';
 import ReportsPage from '@/pages/reports/ReportsPage.jsx';
 import SettingsPage from '@/pages/SettingsPage.jsx';
+import BackupPage from '@/pages/BackupPage.jsx';
+import AboutPage from '@/pages/AboutPage.jsx';
 import AppLayout from '@/components/layout/AppLayout.jsx';
 
 function PrivateRoute({ children }) {
@@ -38,7 +40,9 @@ export default function App() {
         <Route path="operations" element={<NewTransactionPage />} />
         <Route path="statistiques" element={<StatisticsPage />} />
         <Route path="rapports" element={<ReportsPage />} />
+        <Route path="sauvegarde" element={<BackupPage />} />
         <Route path="parametres" element={<SettingsPage />} />
+        <Route path="apropos" element={<AboutPage />} />
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
     </Routes>

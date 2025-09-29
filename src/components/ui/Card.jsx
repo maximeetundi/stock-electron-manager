@@ -2,7 +2,7 @@ import React from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
 
-export function Card({ title, subtitle, actions, loading, children }) {
+export function Card({ title = null, subtitle = null, actions = null, loading = false, children }) {
   return (
     <section className="rounded-3xl bg-white/80 p-8 shadow-xl dark:bg-slate-900/80">
       {(title || subtitle || actions) && (
@@ -29,14 +29,7 @@ Card.propTypes = {
   children: PropTypes.node.isRequired
 };
 
-Card.defaultProps = {
-  title: null,
-  subtitle: null,
-  actions: null,
-  loading: false
-};
-
-export function CardContent({ loading, children }) {
+export function CardContent({ loading = false, children = null }) {
   return (
     <div
       className={classNames('mt-6', {
@@ -51,9 +44,4 @@ export function CardContent({ loading, children }) {
 CardContent.propTypes = {
   loading: PropTypes.bool,
   children: PropTypes.node
-};
-
-CardContent.defaultProps = {
-  loading: false,
-  children: null
 };

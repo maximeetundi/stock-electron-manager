@@ -19,7 +19,7 @@ export default function FiltersPanel({
   onTypeChange,
   onCategoryChange,
   categories,
-  categoriesError,
+  categoriesError = null,
   typeLabel,
   periodLabel,
   categoryLabel,
@@ -154,6 +154,4 @@ FiltersPanel.propTypes = {
   exporting: PropTypes.bool.isRequired
 };
 
-FiltersPanel.defaultProps = {
-  categoriesError: null
-};
+// default props are provided via default parameter values

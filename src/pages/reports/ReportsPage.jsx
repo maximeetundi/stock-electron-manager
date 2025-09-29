@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import FiltersPanel from './components/FiltersPanel.jsx';
 import TotalsSection from './components/TotalsSection.jsx';
 import TransactionsSection from './components/TransactionsSection.jsx';
-import { categoriesApi, fileApi, transactionsApi } from '@/utils/apiClient';
+import { categoriesApi, fileApi, transactionsApi, appApi } from '@/utils/apiClient';
 import { arrayBufferToBase64 } from '@/utils/file';
 import { utils as XLSXUtils, write as writeWorkbook } from 'xlsx';
 import jsPDF from 'jspdf';
@@ -26,6 +26,19 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState(false);
   const [categories, setCategories] = useState([]);
   const [categoriesError, setCategoriesError] = useState(null);
+  const [order, setOrder] = useState('DESC');
+  const [page, setPage] = useState(0);
+  const [pageSize] = useState(10);
+  const [editModal, setEditModal] = useState({ open: false, transaction: null, error: null, loading: false });
+  const [editForm, setEditForm] = useState({
+    categorieId: '',
+    montant: '',
+    type: 'ENTREE',
+    dateHeure: '',
+    libelle: '',
+    lieu: ''
+  });
+  const [deleteModal, setDeleteModal] = useState({ open: false, transaction: null, error: null, loading: false });
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -156,22 +169,154 @@ export default function ReportsPage() {
     return data.transactions.filter((transaction) => transaction.type === filters.typeFilter);
   }, [data?.transactions, filters.typeFilter]);
 
+  const totalTransactions = data?.transactions?.length ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalTransactions / pageSize));
+
+  const sortedTransactions = useMemo(() => {
+    if (!data?.transactions?.length) {
+      return [];
+    }
+    const copy = [...data.transactions];
+    copy.sort((a, b) => {
+      if (order === 'ASC') {
+        return new Date(a.dateHeure).getTime() - new Date(b.dateHeure).getTime();
+      }
+      return new Date(b.dateHeure).getTime() - new Date(a.dateHeure).getTime();
+    });
+    const ordered = copy;
+    if (!Number.isInteger(page) || page < 0) {
+      return ordered;
+    }
+    const start = page * pageSize;
+    return ordered.slice(start, start + pageSize);
+  }, [data?.transactions, order, page, pageSize]);
+
+  useEffect(() => {
+    if (page >= totalPages) {
+      setPage(Math.max(0, totalPages - 1));
+    }
+  }, [page, pageSize, totalPages]);
+
+  const handleOrderChange = (nextOrder) => {
+    setOrder(nextOrder);
+    setPage(0);
+  };
+
+  const handlePageChange = (nextPage) => {
+    const clamped = Math.min(Math.max(nextPage, 0), Math.max(0, totalPages - 1));
+    setPage(clamped);
+  };
+
+  const openEditModal = (transaction) => {
+    if (!transaction) {
+      return;
+    }
+    setEditForm({
+      categorieId: String(transaction.categorieId ?? ''),
+      montant: String(transaction.montant ?? ''),
+      type: transaction.type ?? 'ENTREE',
+      dateHeure: transaction.dateHeure ? transaction.dateHeure.slice(0, 16) : '',
+      libelle: transaction.libelle ?? '',
+      lieu: transaction.lieu ?? ''
+    });
+    setEditModal({ open: true, transaction, error: null, loading: false });
+  };
+
+  const closeEditModal = () => {
+    setEditModal({ open: false, transaction: null, error: null, loading: false });
+  };
+
+  const submitEditModal = async (event) => {
+    event.preventDefault();
+    if (!editModal.transaction) {
+      return;
+    }
+    setEditModal((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const normalizedMontant = Number(
+        String(editForm.montant)
+          .replace(/[ \u00A0\u202F]/g, '')
+          .replace(',', '.')
+      );
+      if (Number.isNaN(normalizedMontant) || normalizedMontant <= 0) {
+        setEditModal((prev) => ({ ...prev, loading: false, error: 'Veuillez saisir un montant valide.' }));
+        return;
+      }
+
+      const payload = {
+        categorieId: Number(editForm.categorieId),
+        montant: normalizedMontant,
+        type: editForm.type,
+        libelle: editForm.libelle.trim(),
+        lieu: editForm.lieu.trim(),
+        dateHeure: editForm.dateHeure ? new Date(editForm.dateHeure).toISOString() : undefined
+      };
+      await transactionsApi.update(editModal.transaction.id, payload);
+      await fetchData();
+      closeEditModal();
+    } catch (err) {
+      setEditModal((prev) => ({ ...prev, error: err.message || 'Impossible de mettre à jour la transaction' }));
+    } finally {
+      setEditModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const openDeleteModal = (transaction) => {
+    if (!transaction) {
+      return;
+    }
+    setDeleteModal({ open: true, transaction, error: null, loading: false });
+  };
+
+  const closeDeleteModal = () => {
+    setDeleteModal({ open: false, transaction: null, error: null, loading: false });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModal.transaction) {
+      return;
+    }
+    setDeleteModal((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      await transactionsApi.delete(deleteModal.transaction.id);
+      await fetchData();
+      closeDeleteModal();
+    } catch (err) {
+      setDeleteModal((prev) => ({ ...prev, error: err.message || 'Impossible de supprimer la transaction' }));
+    } finally {
+      setDeleteModal((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
   const exportTotals = useMemo(() => aggregateTransactions(exportTransactions), [exportTransactions]);
 
   const categoryLabel = selectedCategory ? `Catégorie : ${selectedCategory.nom}` : 'Toutes les catégories';
 
   const confirmPath = async (defaultExtension) => {
     const { period, typeFilter, startDate, endDate, categoryId } = filters;
+    // Convertit la clé de période en libellé FR pour le nom de fichier
+    const periodKeyToFr = {
+      day: 'jour',
+      week: 'semaine',
+      month: 'mois',
+      quarter: 'trimestre',
+      semester: 'semestre',
+      year: 'annee',
+      custom: 'personnalise'
+    };
     const suffixPeriod = period === 'custom' && startDate && endDate
       ? `${startDate}_${endDate}`
-      : period === 'custom'
-        ? 'personnalise'
-        : period;
+      : (periodKeyToFr[period] || period);
     const suffixType = typeFilter && typeFilter !== 'all' ? `-${typeFilter.toLowerCase()}` : '';
     const suffixCategory = categoryId ? `-cat${categoryId}` : '';
+    // Ajoute date et identifiant court aléatoire pour rendre le nom unique et explicite
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const nowStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const randomId = Math.random().toString(36).slice(2, 6);
     const result = await fileApi.saveFile({
       title: 'Exporter les rapports',
-      defaultPath: `${DEFAULT_FILENAME}-${suffixPeriod}${suffixType}${suffixCategory}.${defaultExtension}`,
+      defaultPath: `${DEFAULT_FILENAME}-${suffixPeriod}${suffixType}${suffixCategory}-${nowStr}-${randomId}.${defaultExtension}`,
       filters: [
         {
           name: defaultExtension.toUpperCase(),
@@ -196,6 +341,8 @@ export default function ReportsPage() {
       if (!filePath) {
         return;
       }
+      let orgName = 'Ecole Finances';
+      try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
       const isEntryOnly = filters.typeFilter === 'ENTREE';
       const isExitOnly = filters.typeFilter === 'SORTIE';
       const includeEntries = !isExitOnly;
@@ -203,8 +350,9 @@ export default function ReportsPage() {
       const doc = new jsPDF({ orientation: 'landscape' });
       const formatCurrencyPdf = (value) =>
         formatCurrency(value).replace(/\u202f|\u00a0/g, ' ').replace(/\s{2,}/g, ' ').trim();
-      doc.setFontSize(16);
-      doc.text('Rapport financier - Complexe scolaire', 14, 18);
+      // Titre plus visible en PDF
+      doc.setFontSize(18);
+      doc.text(`Rapport financier — ${orgName}`, 14, 18);
       doc.setFontSize(11);
       const periodLabelText = filters.period === 'custom'
         ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
@@ -214,8 +362,9 @@ export default function ReportsPage() {
       doc.text(categoryLabel, 14, 38);
       autoTable(doc, {
         startY: 42,
-        head: [['Date', 'Heure', 'Catégorie', 'Libellé', 'Type', 'Montant']],
-        body: exportTransactions.map((transaction) => [
+        head: [['N°', 'Date', 'Heure', 'Catégorie', 'Libellé', 'Type', 'Montant']],
+        body: exportTransactions.map((transaction, idx) => [
+          String(idx + 1),
           formatDate(transaction.dateHeure),
           formatTime(transaction.dateHeure),
           transaction.categorie,
@@ -228,10 +377,12 @@ export default function ReportsPage() {
           halign: 'left'
         },
         columnStyles: {
-          5: { halign: 'right' }
+          0: { halign: 'center', cellWidth: 20 },
+          6: { halign: 'right' }
         },
         headStyles: {
-          fillColor: [79, 70, 229]
+          fillColor: [79, 70, 229],
+          fontStyle: 'bold'
         }
       });
 
@@ -276,53 +427,75 @@ export default function ReportsPage() {
       if (!filePath) {
         return;
       }
+      let orgName = 'Ecole Finances';
+      try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
       const isEntryOnly = filters.typeFilter === 'ENTREE';
       const isExitOnly = filters.typeFilter === 'SORTIE';
       const includeEntries = !isExitOnly;
       const includeSorties = !isEntryOnly;
       const workbook = XLSXUtils.book_new();
+      // Ajoute un titre et des informations de contexte en tête de feuille
+      const title = `Rapport financier — ${orgName}`;
+      const infoPeriod = filters.period === 'custom'
+        ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
+        : `Période : ${formatPeriodLabel(filters)}`;
+      const infoFilter = `${typeLabel} • ${categoryLabel}`;
       const worksheetData = [
-        ['Date', 'Heure', 'Catégorie', 'Libellé', 'Type', 'Montant'],
-        ...mapTransactionsForExport(exportTransactions)
+        [title],
+        [infoPeriod],
+        [infoFilter],
+        [],
+        ['N°', 'Date', 'Heure', 'Catégorie', 'Libellé', 'Type', 'Montant'],
+        ...exportTransactions.map((t, idx) => [
+          idx + 1,
+          formatDate(t.dateHeure),
+          formatTime(t.dateHeure),
+          t.categorie,
+          t.libelle || '—',
+          t.type === 'ENTREE' ? 'ENTREE' : 'SORTIE',
+          t.montant
+        ])
       ];
       const worksheet = XLSXUtils.aoa_to_sheet(worksheetData);
       XLSXUtils.book_append_sheet(workbook, worksheet, 'Transactions');
 
-      const dataEndRow = exportTransactions.length + 1;
+      // Ajuste la zone de données en fonction des lignes d'en-tête ajoutées
+      const headerRows = 4; // 3 lignes d'en-tête + 1 ligne vide
+      const dataEndRow = exportTransactions.length + headerRows;
       let summaryRow = dataEndRow + 2;
       let entryTotalRow = null;
       let sortieTotalRow = null;
 
       if (includeEntries) {
-        worksheet[`E${summaryRow}`] = { t: 's', v: 'Total entrées' };
-        worksheet[`F${summaryRow}`] = {
+        worksheet[`F${summaryRow}`] = { t: 's', v: 'Total entrées' };
+        worksheet[`G${summaryRow}`] = {
           t: 'n',
-          f: 'SUMIFS($F:$F,$E:$E,"ENTREE")'
+          f: 'SUMIFS($G:$G,$F:$F,"ENTREE")'
         };
         entryTotalRow = summaryRow;
         summaryRow += 1;
       }
 
       if (includeSorties) {
-        worksheet[`E${summaryRow}`] = { t: 's', v: 'Total sorties' };
-        worksheet[`F${summaryRow}`] = {
+        worksheet[`F${summaryRow}`] = { t: 's', v: 'Total sorties' };
+        worksheet[`G${summaryRow}`] = {
           t: 'n',
-          f: 'SUMIFS($F:$F,$E:$E,"SORTIE")'
+          f: 'SUMIFS($G:$G,$F:$F,"SORTIE")'
         };
         sortieTotalRow = summaryRow;
         summaryRow += 1;
       }
 
       if (includeEntries && includeSorties) {
-        worksheet[`E${summaryRow}`] = { t: 's', v: 'Solde net' };
-        worksheet[`F${summaryRow}`] = {
+        worksheet[`F${summaryRow}`] = { t: 's', v: 'Solde net' };
+        worksheet[`G${summaryRow}`] = {
           t: 'n',
-          f: `F${entryTotalRow}-F${sortieTotalRow}`
+          f: `G${entryTotalRow}-G${sortieTotalRow}`
         };
         summaryRow += 1;
       }
 
-      worksheet['!ref'] = `A1:F${Math.max(summaryRow - 1, dataEndRow)}`;
+      worksheet['!ref'] = `A1:G${Math.max(summaryRow - 1, dataEndRow)}`;
 
       const arrayBuffer = writeWorkbook(workbook, { bookType: 'xlsx', type: 'array' });
       const base64 = arrayBufferToBase64(arrayBuffer);
@@ -359,12 +532,171 @@ export default function ReportsPage() {
         exporting={exporting}
       />
       <TotalsSection totals={totals} typeLabel={typeLabel} categoryLabel={categoryLabel} />
-      <TransactionsSection transactions={data?.transactions ?? []} loading={loading} />
+      <TransactionsSection
+        transactions={sortedTransactions}
+        loading={loading}
+        onEdit={openEditModal}
+        onDelete={openDeleteModal}
+        emptyMessage={
+          totalTransactions === 0
+            ? 'Aucune opération enregistrée pour cette période.'
+            : 'Aucune opération pour cette page.'
+        }
+        order={order}
+        onOrderChange={handleOrderChange}
+        page={page}
+        totalPages={totalPages}
+        total={totalTransactions}
+        onPageChange={handlePageChange}
+        filters={filters}
+        onPeriodChange={handlePeriodChange}
+        categories={categories}
+        onCategoryChange={handleCategoryChange}
+        onTypeChange={handleTypeChange}
+        baseIndex={page * pageSize}
+      />
+      {editModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Modifier l’opération</h3>
+            <form onSubmit={submitEditModal} className="mt-6 space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Catégorie
+                  <select
+                    value={editForm.categorieId}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, categorieId: event.target.value }))}
+                    className="mt-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    required
+                  >
+                    <option value="">Sélectionner…</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.nom}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Montant (XAF)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={editForm.montant}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, montant: event.target.value }))}
+                    className="mt-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    required
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Type
+                  <select
+                    value={editForm.type}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, type: event.target.value }))}
+                    className="mt-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    required
+                  >
+                    <option value="ENTREE">Entrée</option>
+                    <option value="SORTIE">Sortie</option>
+                  </select>
+                </label>
+                <label className="flex flex-col text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Date &amp; heure
+                  <input
+                    type="datetime-local"
+                    value={editForm.dateHeure}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, dateHeure: event.target.value }))}
+                    className="mt-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Libellé
+                  <input
+                    type="text"
+                    value={editForm.libelle}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, libelle: event.target.value }))}
+                    className="mt-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    placeholder="Ex. Fournisseur"
+                  />
+                </label>
+                <label className="flex flex-col text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Lieu / Description
+                  <input
+                    type="text"
+                    value={editForm.lieu}
+                    onChange={(event) => setEditForm((prev) => ({ ...prev, lieu: event.target.value }))}
+                    className="mt-1 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    placeholder="Ex. Caisse centrale"
+                  />
+                </label>
+              </div>
+              {editModal.error ? (
+                <p className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-500/60 dark:bg-rose-500/10 dark:text-rose-200">
+                  {editModal.error}
+                </p>
+              ) : null}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={editModal.loading}
+                  className="rounded-2xl bg-primary-500 px-5 py-2 text-sm font-semibold text-white shadow shadow-primary-500/40 transition hover:bg-primary-400 disabled:cursor-not-allowed disabled:bg-primary-500/60"
+                >
+                  {editModal.loading ? 'Enregistrement…' : 'Enregistrer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {deleteModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-8 shadow-2xl dark:bg-slate-900">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Supprimer l’opération</h3>
+            <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+              Confirmez-vous la suppression de cette opération ? Cette action est irréversible.
+            </p>
+            {deleteModal.error ? (
+              <p className="mt-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-500/60 dark:bg-rose-500/10 dark:text-rose-200">
+                {deleteModal.error}
+              </p>
+            ) : null}
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                className="rounded-2xl border border-slate-200 px-5 py-2 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-700 dark:border-slate-700 dark:text-slate-300"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleteModal.loading}
+                className="rounded-2xl bg-rose-500 px-5 py-2 text-sm font-semibold text-white shadow shadow-rose-500/40 transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:bg-rose-500/60"
+              >
+                {deleteModal.loading ? 'Suppression…' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {error && (
         <p className="mt-4 rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-500/60 dark:bg-rose-500/10 dark:text-rose-200">
           {error}
         </p>
-      )}
+      )}  
     </div>
   );
 }
+

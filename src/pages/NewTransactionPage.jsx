@@ -25,6 +25,7 @@ export default function NewTransactionPage() {
   const [categorieId, setCategorieId] = useState('');
   const [montant, setMontant] = useState('');
   const [libelle, setLibelle] = useState('');
+  const [dateHeure, setDateHeure] = useState('');
   const [feedback, setFeedback] = useState(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
@@ -64,17 +65,26 @@ export default function NewTransactionPage() {
     setFeedback(null);
     try {
       const trimmedLibelle = libelle.trim();
+      const normalizedMontant = Number(String(montant).replace(',', '.'));
+      if (Number.isNaN(normalizedMontant) || normalizedMontant < 0) {
+        setFeedback({ type: 'error', message: 'Veuillez saisir un montant valide.' });
+        setLoading(false);
+        return;
+      }
+
       const payload = {
         categorieId: Number(categorieId),
-        montant: Number(montant),
+        montant: normalizedMontant,
         type,
         libelle: trimmedLibelle || undefined,
-        lieu: trimmedLibelle || undefined
+        lieu: trimmedLibelle || undefined,
+        dateHeure: dateHeure ? new Date(dateHeure).toISOString() : undefined
       };
       const transaction = await transactionsApi.create(payload);
       setFeedback({ type: 'success', message: 'Opération ajoutée avec succès !' });
       setMontant('');
       setLibelle('');
+      setDateHeure('');
       setHistory((prev) => [
         {
           ...transaction,
@@ -160,11 +170,26 @@ export default function NewTransactionPage() {
             <input
               type="number"
               min="0"
-              step="100"
+              step="0.01"
+              max="1000000000000"
               value={montant}
               onChange={(event) => setMontant(event.target.value)}
+              inputMode="decimal"
               required
               className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
+              <ClockIcon className="h-5 w-5 text-primary-500" />
+              Date & heure (optionnel)
+            </label>
+            <input
+              type="datetime-local"
+              value={dateHeure}
+              onChange={(event) => setDateHeure(event.target.value)}
+              className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              placeholder="Sélectionnez une date si l'opération est antérieure"
             />
           </div>
           <div>
