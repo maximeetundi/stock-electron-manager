@@ -29,6 +29,7 @@ export default function ReportsPage() {
   const [order, setOrder] = useState('DESC');
   const [page, setPage] = useState(0);
   const [pageSize] = useState(10);
+  const [searchQuery, setSearchQuery] = useState('');
   const [editModal, setEditModal] = useState({ open: false, transaction: null, error: null, loading: false });
   const [editForm, setEditForm] = useState({
     categorieId: '',
@@ -103,6 +104,27 @@ export default function ReportsPage() {
     return { global, categories: categoriesBreakdown };
   }, [data]);
 
+  const counts = useMemo(() => ({
+    totalCount: data?.counts?.totalCount ?? 0,
+    entreeCount: data?.counts?.entreeCount ?? 0,
+    sortieCount: data?.counts?.sortieCount ?? 0
+  }), [data?.counts]);
+
+  // Handle search input: numeric -> jump to rank page; text -> filter by libellé
+  const handleSearchChange = useCallback((value) => {
+    setSearchQuery(value);
+    const raw = String(value).trim();
+    if (/^\d+$/.test(raw)) {
+      const n = Math.max(1, parseInt(raw, 10));
+      const targetIndex = n - 1;
+      const targetPage = Math.floor(targetIndex / pageSize);
+      setPage(targetPage);
+    } else {
+      // For text search, always reset to first page for convenience
+      setPage(0);
+    }
+  }, [pageSize]);
+
   const handlePeriodChange = useCallback((value) => {
     setFilters((prev) => {
       const next = { ...prev, ...value };
@@ -169,14 +191,28 @@ export default function ReportsPage() {
     return data.transactions.filter((transaction) => transaction.type === filters.typeFilter);
   }, [data?.transactions, filters.typeFilter]);
 
-  const totalTransactions = data?.transactions?.length ?? 0;
+  const baseList = useMemo(() => (data?.transactions ?? []).map((t) => ({
+    ...t,
+    libelle: t.libelle ?? t.lieu ?? ''
+  })), [data?.transactions]);
+
+  const filteredList = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q || /^\d+$/.test(q)) return baseList;
+    const lower = q.toLowerCase();
+    return baseList.filter((t) =>
+      (t.libelle || '').toLowerCase().includes(lower)
+    );
+  }, [baseList, searchQuery]);
+
+  const totalTransactions = filteredList.length;
   const totalPages = Math.max(1, Math.ceil(totalTransactions / pageSize));
 
   const sortedTransactions = useMemo(() => {
-    if (!data?.transactions?.length) {
+    if (!filteredList.length) {
       return [];
     }
-    const copy = [...data.transactions];
+    const copy = [...filteredList];
     copy.sort((a, b) => {
       if (order === 'ASC') {
         return new Date(a.dateHeure).getTime() - new Date(b.dateHeure).getTime();
@@ -189,7 +225,7 @@ export default function ReportsPage() {
     }
     const start = page * pageSize;
     return ordered.slice(start, start + pageSize);
-  }, [data?.transactions, order, page, pageSize]);
+  }, [filteredList, order, page, pageSize]);
 
   useEffect(() => {
     if (page >= totalPages) {
@@ -399,10 +435,49 @@ export default function ReportsPage() {
         summaryLines.push(`Solde : ${formatCurrencyPdf(exportTotals.global.balance)}`);
       }
 
-      const summaryStartY = tableBottomY + 12;
-      doc.text('Résumé', 14, summaryStartY);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const left = 14;
+      const right = pageWidth - 14;
+      const gutter = 12;
+      const colWidth = (right - left - gutter);
+      const colHalf = colWidth / 2;
+      const topY = (doc.lastAutoTable?.finalY ?? 34) + 12;
+
+      // Prepare lines for both sections
+      const summaryTitle = 'Résumé';
+      const summaryLineHeight = 7;
+      const summaryPadding = 6;
+      const summaryHeight = summaryPadding * 2 + summaryLineHeight * (summaryLines.length + 1);
+
+      const countLines = [`Nombre d’opérations : ${counts.totalCount}`];
+      if (includeEntries) countLines.push(`Entrées : ${counts.entreeCount}`);
+      if (includeSorties) countLines.push(`Sorties : ${counts.sortieCount}`);
+      const countsTitle = 'Comptage';
+      const countsLineHeight = 7;
+      const countsPadding = 6;
+      const countsHeight = countsPadding * 2 + countsLineHeight * (countLines.length + 1);
+
+      // Draw side-by-side boxes
+      doc.setDrawColor(226, 232, 240); // slate-200
+      // Left column: Résumé
+      doc.roundedRect(left - 2, topY - 8, colHalf + 4, summaryHeight + 12, 3, 3);
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(summaryTitle, left, topY);
+      doc.setFont(undefined, 'normal');
       summaryLines.forEach((line, index) => {
-        doc.text(line, 14, summaryStartY + 6 * (index + 1));
+        doc.text(line, left, topY + summaryPadding + summaryLineHeight * (index + 1));
+      });
+
+      // Right column: Comptage
+      const rightColLeft = left + colHalf + gutter;
+      doc.roundedRect(rightColLeft - 2, topY - 8, colHalf + 4, countsHeight + 12, 3, 3);
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(countsTitle, rightColLeft, topY);
+      doc.setFont(undefined, 'normal');
+      countLines.forEach((line, index) => {
+        doc.text(line, rightColLeft, topY + countsPadding + countsLineHeight * (index + 1));
       });
 
       const pdfArrayBuffer = doc.output('arraybuffer');
@@ -495,6 +570,21 @@ export default function ReportsPage() {
         summaryRow += 1;
       }
 
+      // Counts rows
+      worksheet[`F${summaryRow}`] = { t: 's', v: 'Nombre opérations' };
+      worksheet[`G${summaryRow}`] = { t: 'n', v: counts.totalCount };
+      summaryRow += 1;
+      if (includeEntries) {
+        worksheet[`F${summaryRow}`] = { t: 's', v: 'Nombre entrées' };
+        worksheet[`G${summaryRow}`] = { t: 'n', v: counts.entreeCount };
+        summaryRow += 1;
+      }
+      if (includeSorties) {
+        worksheet[`F${summaryRow}`] = { t: 's', v: 'Nombre sorties' };
+        worksheet[`G${summaryRow}`] = { t: 'n', v: counts.sortieCount };
+        summaryRow += 1;
+      }
+
       worksheet['!ref'] = `A1:G${Math.max(summaryRow - 1, dataEndRow)}`;
 
       const arrayBuffer = writeWorkbook(workbook, { bookType: 'xlsx', type: 'array' });
@@ -530,8 +620,10 @@ export default function ReportsPage() {
         onExportExcel={exportToExcel}
         exportDisabled={exportDisabled}
         exporting={exporting}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
       />
-      <TotalsSection totals={totals} typeLabel={typeLabel} categoryLabel={categoryLabel} />
+      <TotalsSection totals={totals} typeLabel={typeLabel} categoryLabel={categoryLabel} counts={counts} />
       <TransactionsSection
         transactions={sortedTransactions}
         loading={loading}

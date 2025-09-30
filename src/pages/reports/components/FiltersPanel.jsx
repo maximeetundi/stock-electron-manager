@@ -26,7 +26,9 @@ export default function FiltersPanel({
   onExportPdf,
   onExportExcel,
   exportDisabled,
-  exporting
+  exporting,
+  searchQuery = '',
+  onSearchChange
 }) {
   const typeFilterIcons = {
     all: ArrowsRightLeftIcon,
@@ -98,6 +100,17 @@ export default function FiltersPanel({
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-slate-500 dark:text-slate-300">
+            <TableCellsIcon className="h-4 w-4 text-primary-500" />
+            Rechercher
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
+              placeholder="Libellé ou rang (N°)"
+              className="mt-1 w-56 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            />
+          </label>
           {categoriesError && (
             <span className="text-xs text-rose-500">{categoriesError}</span>
           )}
@@ -151,7 +164,9 @@ FiltersPanel.propTypes = {
   onExportPdf: PropTypes.func.isRequired,
   onExportExcel: PropTypes.func.isRequired,
   exportDisabled: PropTypes.bool.isRequired,
-  exporting: PropTypes.bool.isRequired
+  exporting: PropTypes.bool.isRequired,
+  searchQuery: PropTypes.string,
+  onSearchChange: PropTypes.func
 };
 
 // default props are provided via default parameter values

@@ -27,12 +27,14 @@ export default function MetricCard({ period, totals }) {
           <p className="text-xl font-semibold text-emerald-500">
             {formatCurrency(totals?.entree)}
           </p>
+          <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-300">{(totals?.entreeCount ?? 0)} opérations</p>
         </div>
         <div>
           <p className="text-sm text-slate-500 dark:text-slate-400">Sorties</p>
           <p className="text-xl font-semibold text-rose-500">
             {formatCurrency(totals?.sortie)}
           </p>
+          <p className="mt-1 text-xs text-rose-600 dark:text-rose-300">{(totals?.sortieCount ?? 0)} opérations</p>
         </div>
       </div>
       <div className="mt-6 rounded-2xl bg-slate-900/90 p-4 text-white dark:bg-slate-800">
@@ -45,6 +47,7 @@ export default function MetricCard({ period, totals }) {
         >
           {formatCurrency(totals?.balance)}
         </p>
+        <p className="mt-2 text-[11px] text-white/70">Total opérations: {(totals?.totalCount ?? 0)}</p>
       </div>
     </div>
   );

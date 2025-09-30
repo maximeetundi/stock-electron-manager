@@ -9,7 +9,7 @@ import {
   InformationCircleIcon
 } from '@heroicons/react/24/outline';
 
-export default function TotalsSection({ totals, typeLabel, categoryLabel }) {
+export default function TotalsSection({ totals, typeLabel, categoryLabel, counts }) {
   return (
     <section className="rounded-3xl bg-white/80 p-8 shadow-xl dark:bg-slate-900/80">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -44,6 +44,11 @@ export default function TotalsSection({ totals, typeLabel, categoryLabel }) {
             <ScaleIcon className="h-4 w-4" />
             Solde : {formatCurrency(totals.global.balance)}
           </p>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-white/80">
+            <div>Nb opérations: {counts?.totalCount ?? 0}</div>
+            <div>Entrées: {counts?.entreeCount ?? 0}</div>
+            <div>Sorties: {counts?.sortieCount ?? 0}</div>
+          </div>
         </div>
       </div>
       <div className="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-white/90 shadow-lg backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/80">
@@ -88,5 +93,10 @@ TotalsSection.propTypes = {
     )
   }).isRequired,
   typeLabel: PropTypes.string.isRequired,
-  categoryLabel: PropTypes.string.isRequired
+  categoryLabel: PropTypes.string.isRequired,
+  counts: PropTypes.shape({
+    totalCount: PropTypes.number,
+    entreeCount: PropTypes.number,
+    sortieCount: PropTypes.number
+  })
 };

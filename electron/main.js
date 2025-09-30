@@ -84,7 +84,7 @@ function createWindow() {
       console.error('[main] loadFile failed', err);
     });
     // TEMP: open devtools in production to debug white screen
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    //mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
   mainWindow.on('closed', () => {

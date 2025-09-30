@@ -683,6 +683,12 @@ function createDatabaseService(app) {
       balance: totals.entree - totals.sortie
     };
 
+    const counts = {
+      totalCount: transactions.length,
+      entreeCount: transactions.filter((t) => t.type === 'ENTREE').length,
+      sortieCount: transactions.filter((t) => t.type === 'SORTIE').length
+    };
+
     return {
       range,
       transactions,
@@ -690,7 +696,8 @@ function createDatabaseService(app) {
       balance: computedTotals.balance,
       categoryBreakdown,
       type: effectiveType,
-      categoryId: hasCategoryFilter ? normalizedCategoryId : null
+      categoryId: hasCategoryFilter ? normalizedCategoryId : null,
+      counts
     };
   }
 
@@ -699,11 +706,14 @@ function createDatabaseService(app) {
     const totals = {};
 
     periods.forEach((period) => {
-      const { totals: periodTotals, balance } = getTransactionsByPeriod({ period });
+      const { totals: periodTotals, balance, counts } = getTransactionsByPeriod({ period });
       totals[period] = {
         entree: periodTotals.entree,
         sortie: periodTotals.sortie,
-        balance
+        balance,
+        totalCount: counts.totalCount,
+        entreeCount: counts.entreeCount,
+        sortieCount: counts.sortieCount
       };
     });
 
