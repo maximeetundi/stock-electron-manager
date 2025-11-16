@@ -371,6 +371,163 @@ function setupIPC() {
       return { ok: false, error: error.message };
     }
   });
+
+  // ========== GESTION DES FOURNISSEURS (v1.2) ==========
+  ipcMain.handle('fournisseurs:list', () => {
+    try {
+      const data = dbService.getFournisseurs();
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('fournisseurs:add', (_event, payload) => {
+    try {
+      const data = dbService.addFournisseur(payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('fournisseurs:update', (_event, { id, payload }) => {
+    try {
+      const data = dbService.updateFournisseur(id, payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('fournisseurs:delete', (_event, id) => {
+    try {
+      const data = dbService.deleteFournisseur(id);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  // ========== GESTION DES ARTICLES (v1.2) ==========
+  ipcMain.handle('articles:list', () => {
+    try {
+      const data = dbService.getArticles();
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('articles:get', (_event, id) => {
+    try {
+      const data = dbService.getArticleById(id);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('articles:add', (_event, payload) => {
+    try {
+      const data = dbService.addArticle(payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('articles:update', (_event, { id, payload }) => {
+    try {
+      const data = dbService.updateArticle(id, payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('articles:delete', (_event, id) => {
+    try {
+      const data = dbService.deleteArticle(id);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('articles:alert-stock', () => {
+    try {
+      const data = dbService.getArticlesAlertStock();
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  // ========== GESTION DES MOUVEMENTS DE STOCK (v1.2) ==========
+  ipcMain.handle('mouvements:add', (_event, payload) => {
+    try {
+      const data = dbService.addMouvementStock(payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('mouvements:list', (_event, { article_id, limit }) => {
+    try {
+      const data = dbService.getMouvementsStock(article_id, limit);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  // ========== GESTION DES BONS DE COMMANDE (v1.2) ==========
+  ipcMain.handle('bons-commande:list', () => {
+    try {
+      const data = dbService.getBonsCommande();
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('bons-commande:get', (_event, id) => {
+    try {
+      const data = dbService.getBonCommandeById(id);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('bons-commande:create', (_event, payload) => {
+    try {
+      const data = dbService.createBonCommande(payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('bons-commande:update-statut', (_event, { id, statut }) => {
+    try {
+      const data = dbService.updateBonCommandeStatut(id, statut);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('bons-commande:delete', (_event, id) => {
+    try {
+      const data = dbService.deleteBonCommande(id);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
 }
 
 app.whenReady().then(() => {

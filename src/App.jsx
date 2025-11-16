@@ -9,6 +9,9 @@ import ReportsPage from '@/pages/reports/ReportsPage.jsx';
 import SettingsPage from '@/pages/SettingsPage.jsx';
 import BackupPage from '@/pages/BackupPage.jsx';
 import AboutPage from '@/pages/AboutPage.jsx';
+import StockPage from '@/pages/StockPage.jsx';
+import BonsCommandePage from '@/pages/BonsCommandePage.jsx';
+import StockReportsPage from '@/pages/StockReportsPage.jsx';
 import AppLayout from '@/components/layout/AppLayout.jsx';
 
 function PrivateRoute({ children }) {
@@ -40,6 +43,9 @@ export default function App() {
         <Route path="operations" element={<NewTransactionPage />} />
         <Route path="statistiques" element={<StatisticsPage />} />
         <Route path="rapports" element={<ReportsPage />} />
+        <Route path="stock" element={<StockPage />} />
+        <Route path="bons-commande" element={<BonsCommandePage />} />
+        <Route path="rapports-stock" element={<StockReportsPage />} />
         <Route path="sauvegarde" element={<BackupPage />} />
         <Route path="parametres" element={<SettingsPage />} />
         <Route path="apropos" element={<AboutPage />} />

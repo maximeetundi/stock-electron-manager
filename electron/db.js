@@ -144,6 +144,111 @@ function initializeSchema(db) {
   if (!hasLieuColumn) {
     db.prepare('ALTER TABLE transactions ADD COLUMN lieu TEXT').run();
   }
+
+  // Tables pour la gestion de stock (version 1.2)
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS fournisseurs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nom TEXT NOT NULL UNIQUE,
+      adresse TEXT,
+      telephone TEXT,
+      email TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      designation TEXT NOT NULL,
+      unite TEXT NOT NULL DEFAULT 'unité',
+      prix_unitaire REAL NOT NULL DEFAULT 0,
+      quantite_stock INTEGER NOT NULL DEFAULT 0,
+      quantite_min INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS bons_commande (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      numero TEXT NOT NULL UNIQUE,
+      fournisseur_id INTEGER NOT NULL,
+      date_commande TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      statut TEXT NOT NULL DEFAULT 'EN_COURS' CHECK (statut IN ('EN_COURS', 'LIVREE', 'ANNULEE')),
+      montant_total REAL NOT NULL DEFAULT 0,
+      observations TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (fournisseur_id) REFERENCES fournisseurs(id) ON DELETE RESTRICT ON UPDATE CASCADE
+    )
+  `).run();
+
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS bons_commande_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bon_commande_id INTEGER NOT NULL,
+      type TEXT NOT NULL DEFAULT 'article' CHECK (type IN ('article', 'service')),
+      article_id INTEGER,
+      designation TEXT NOT NULL DEFAULT '',
+      unite TEXT NOT NULL DEFAULT 'unité',
+      quantite INTEGER NOT NULL,
+      prix_unitaire REAL NOT NULL,
+      montant REAL NOT NULL,
+      affecte_stock INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (bon_commande_id) REFERENCES bons_commande(id) ON DELETE CASCADE ON UPDATE CASCADE,
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE RESTRICT ON UPDATE CASCADE
+    )
+  `).run();
+
+  // Migration : ajouter les colonnes si elles n'existent pas
+  try {
+    db.prepare(`ALTER TABLE bons_commande_items ADD COLUMN type TEXT NOT NULL DEFAULT 'article'`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+  
+  try {
+    db.prepare(`ALTER TABLE bons_commande_items ADD COLUMN designation TEXT NOT NULL DEFAULT ''`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+  
+  try {
+    db.prepare(`ALTER TABLE bons_commande_items ADD COLUMN unite TEXT NOT NULL DEFAULT 'unité'`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+  
+  try {
+    db.prepare(`ALTER TABLE bons_commande_items ADD COLUMN affecte_stock INTEGER NOT NULL DEFAULT 1`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+
+  // Migration: articles - unités de conditionnement
+  try {
+    db.prepare(`ALTER TABLE articles ADD COLUMN unite_conditionnement TEXT`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+
+  try {
+    db.prepare(`ALTER TABLE articles ADD COLUMN qte_par_conditionnement INTEGER NOT NULL DEFAULT 1`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+
+  // Table des mouvements de stock
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS mouvements_stock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      article_id INTEGER NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('ENTREE', 'SORTIE', 'AJUSTEMENT')),
+      quantite INTEGER NOT NULL,
+      reference TEXT,
+      motif TEXT,
+      date_mouvement TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE ON UPDATE CASCADE
+    )
+  `).run();
+
+  // Migration: mouvements_stock - conserver l'unité et la quantité saisies
+  try {
+    db.prepare(`ALTER TABLE mouvements_stock ADD COLUMN quantite_saisie INTEGER`).run();
+  } catch (e) { /* Colonne existe déjà */ }
+  try {
+    db.prepare(`ALTER TABLE mouvements_stock ADD COLUMN unite_saisie TEXT`).run();
+  } catch (e) { /* Colonne existe déjà */ }
 }
 
 function seedCategories(db) {
@@ -835,6 +940,321 @@ function createDatabaseService(app) {
     return true;
   }
 
+  // ========== GESTION DES FOURNISSEURS ==========
+  function getFournisseurs() {
+    return db.prepare('SELECT * FROM fournisseurs ORDER BY nom ASC').all();
+  }
+
+  function addFournisseur({ nom, adresse, telephone, email }) {
+    if (!nom?.trim()) throw new Error('Le nom du fournisseur est requis');
+    const info = db.prepare(
+      'INSERT INTO fournisseurs (nom, adresse, telephone, email) VALUES (?, ?, ?, ?)'
+    ).run(nom.trim(), adresse?.trim() || null, telephone?.trim() || null, email?.trim() || null);
+    return db.prepare('SELECT * FROM fournisseurs WHERE id = ?').get(info.lastInsertRowid);
+  }
+
+  function updateFournisseur(id, { nom, adresse, telephone, email }) {
+    if (!nom?.trim()) throw new Error('Le nom du fournisseur est requis');
+    const info = db.prepare(
+      'UPDATE fournisseurs SET nom = ?, adresse = ?, telephone = ?, email = ? WHERE id = ?'
+    ).run(nom.trim(), adresse?.trim() || null, telephone?.trim() || null, email?.trim() || null, id);
+    if (!info.changes) throw new Error('Fournisseur introuvable');
+    return db.prepare('SELECT * FROM fournisseurs WHERE id = ?').get(id);
+  }
+
+  function deleteFournisseur(id) {
+    const info = db.prepare('DELETE FROM fournisseurs WHERE id = ?').run(id);
+    if (!info.changes) throw new Error('Fournisseur introuvable');
+    return true;
+  }
+
+  // ========== GESTION DES ARTICLES ==========
+  function getArticles() {
+    return db.prepare('SELECT * FROM articles ORDER BY designation ASC').all();
+  }
+
+  function getArticleById(id) {
+    return db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
+  }
+
+  function addArticle({ code, designation, unite, prix_unitaire, quantite_stock, quantite_min, unite_conditionnement, qte_par_conditionnement }) {
+    if (!code?.trim()) throw new Error('Le code article est requis');
+    if (!designation?.trim()) throw new Error('La désignation est requise');
+    const info = db.prepare(
+      `INSERT INTO articles (code, designation, unite, prix_unitaire, quantite_stock, quantite_min, unite_conditionnement, qte_par_conditionnement)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      code.trim(),
+      designation.trim(),
+      unite?.trim() || 'unité',
+      Number(prix_unitaire) || 0,
+      Number(quantite_stock) || 0,
+      Number(quantite_min) || 0,
+      (unite_conditionnement?.trim() || null),
+      Number(qte_par_conditionnement) || 1
+    );
+    return db.prepare('SELECT * FROM articles WHERE id = ?').get(info.lastInsertRowid);
+  }
+
+  function updateArticle(id, { code, designation, unite, prix_unitaire, quantite_min, unite_conditionnement, qte_par_conditionnement }) {
+    if (!code?.trim()) throw new Error('Le code article est requis');
+    if (!designation?.trim()) throw new Error('La désignation est requise');
+    const info = db.prepare(
+      `UPDATE articles 
+       SET code = ?, designation = ?, unite = ?, prix_unitaire = ?, quantite_min = ?, unite_conditionnement = ?, qte_par_conditionnement = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).run(
+      code.trim(),
+      designation.trim(),
+      unite?.trim() || 'unité',
+      Number(prix_unitaire) || 0,
+      Number(quantite_min) || 0,
+      (unite_conditionnement?.trim() || null),
+      Number(qte_par_conditionnement) || 1,
+      id
+    );
+    if (!info.changes) throw new Error('Article introuvable');
+    return db.prepare('SELECT * FROM articles WHERE id = ?').get(id);
+  }
+
+  function deleteArticle(id) {
+    const info = db.prepare('DELETE FROM articles WHERE id = ?').run(id);
+    if (!info.changes) throw new Error('Article introuvable');
+    return true;
+  }
+
+  function getArticlesAlertStock() {
+    return db.prepare('SELECT * FROM articles WHERE quantite_stock <= quantite_min ORDER BY designation ASC').all();
+  }
+
+  // ========== GESTION DES MOUVEMENTS DE STOCK ==========
+  function addMouvementStock({ article_id, type, quantite, reference, motif, unite_saisie }) {
+    if (!['ENTREE', 'SORTIE', 'AJUSTEMENT'].includes(type)) {
+      throw new Error('Type de mouvement invalide');
+    }
+    const article = getArticleById(article_id);
+    if (!article) throw new Error('Article introuvable');
+
+    const qte = Number(quantite) || 0;
+    let newStock = article.quantite_stock;
+
+    // Conversion d'unités: base = article.unite
+    const baseUnite = String(article.unite || '').trim();
+    const packUnite = String(article.unite_conditionnement || '').trim();
+    const packSize = Number(article.qte_par_conditionnement || 1) || 1;
+    const saisieUnite = String(unite_saisie || '').trim();
+
+    // Conversion vers l'unité de base (article.unite)
+    // Convention: l'unité (article.unite) est l'unité de stock (ex: Carton)
+    // et l'unité de conditionnement (article.unite_conditionnement) est l'unité interne (ex: Ram)
+    // 1 unité (Carton) = N unités de conditionnement (Ram)
+    let qteEffective = qte;
+    if (saisieUnite && packUnite && packSize > 0 && saisieUnite.toLowerCase() === packUnite.toLowerCase()) {
+      qteEffective = qte / packSize; // saisie en conditionnement (ram) => convertir en base (carton)
+    } else {
+      // saisie en unité de base ou unité inconnue => pas de conversion
+      qteEffective = qte;
+    }
+    
+    if (type === 'ENTREE') {
+      newStock += qteEffective;
+    } else if (type === 'SORTIE') {
+      newStock -= qteEffective;
+      if (newStock < 0) throw new Error('Stock insuffisant');
+    } else if (type === 'AJUSTEMENT') {
+      newStock = qteEffective;
+    }
+
+    const transaction = db.transaction(() => {
+      const info = db.prepare(
+        'INSERT INTO mouvements_stock (article_id, type, quantite, reference, motif, quantite_saisie, unite_saisie) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(
+        article_id,
+        type,
+        qteEffective,
+        reference?.trim() || null,
+        motif?.trim() || null,
+        qte,
+        saisieUnite || baseUnite || null
+      );
+      
+      db.prepare('UPDATE articles SET quantite_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(newStock, article_id);
+      
+      return info.lastInsertRowid;
+    });
+
+    const mouvementId = transaction();
+    return db.prepare('SELECT * FROM mouvements_stock WHERE id = ?').get(mouvementId);
+  }
+
+  function getMouvementsStock(article_id = null, limit = 50) {
+    if (article_id) {
+      return db.prepare(
+        `SELECT m.*, a.designation, a.code, a.unite AS article_unite
+         FROM mouvements_stock m
+         INNER JOIN articles a ON a.id = m.article_id
+         WHERE m.article_id = ?
+         ORDER BY m.date_mouvement DESC
+         LIMIT ?`
+      ).all(article_id, limit);
+    }
+    return db.prepare(
+      `SELECT m.*, a.designation, a.code, a.unite AS article_unite
+       FROM mouvements_stock m
+       INNER JOIN articles a ON a.id = m.article_id
+       ORDER BY m.date_mouvement DESC
+       LIMIT ?`
+    ).all(limit);
+  }
+
+  // ========== GESTION DES BONS DE COMMANDE ==========
+  function generateNumeroBC() {
+    const year = new Date().getFullYear();
+    const lastBC = db.prepare(
+      `SELECT numero FROM bons_commande 
+       WHERE numero LIKE ? 
+       ORDER BY id DESC LIMIT 1`
+    ).get(`BC-${year}-%`);
+    
+    if (!lastBC) return `BC-${year}-001`;
+    
+    const match = lastBC.numero.match(/-(\d+)$/);
+    const nextNum = match ? parseInt(match[1]) + 1 : 1;
+    return `BC-${year}-${String(nextNum).padStart(3, '0')}`;
+  }
+
+  function getBonsCommande() {
+    return db.prepare(
+      `SELECT bc.*, f.nom as fournisseur_nom
+       FROM bons_commande bc
+       INNER JOIN fournisseurs f ON f.id = bc.fournisseur_id
+       ORDER BY bc.date_commande DESC`
+    ).all();
+  }
+
+  function getBonCommandeById(id) {
+    const bon = db.prepare(
+      `SELECT bc.*, f.nom as fournisseur_nom, f.adresse as fournisseur_adresse, 
+              f.telephone as fournisseur_telephone, f.email as fournisseur_email
+       FROM bons_commande bc
+       INNER JOIN fournisseurs f ON f.id = bc.fournisseur_id
+       WHERE bc.id = ?`
+    ).get(id);
+    
+    if (!bon) return null;
+    
+    const items = db.prepare(
+      `SELECT bci.*, 
+              COALESCE(a.code, 'SERVICE') as code,
+              COALESCE(a.designation, bci.designation) as designation,
+              COALESCE(a.unite, bci.unite) as unite
+       FROM bons_commande_items bci
+       LEFT JOIN articles a ON a.id = bci.article_id
+       WHERE bci.bon_commande_id = ?`
+    ).all(id);
+    
+    return { ...bon, items };
+  }
+
+  function createBonCommande({ fournisseur_id, date_commande, observations, items }) {
+    if (!fournisseur_id) throw new Error('Le fournisseur est requis');
+    if (!items || !items.length) throw new Error('Le bon de commande doit contenir au moins une ligne');
+
+    const numero = generateNumeroBC();
+    const montant_total = items.reduce((sum, item) => sum + (item.quantite * item.prix_unitaire), 0);
+
+    const transaction = db.transaction(() => {
+      const bcInfo = db.prepare(
+        `INSERT INTO bons_commande (numero, fournisseur_id, date_commande, montant_total, observations)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(
+        numero,
+        fournisseur_id,
+        date_commande || new Date().toISOString(),
+        montant_total,
+        observations?.trim() || null
+      );
+
+      const bonId = bcInfo.lastInsertRowid;
+      const insertItem = db.prepare(
+        `INSERT INTO bons_commande_items 
+         (bon_commande_id, type, article_id, designation, unite, quantite, prix_unitaire, montant, affecte_stock)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+
+      items.forEach(item => {
+        const montant = item.quantite * item.prix_unitaire;
+        const type = item.type || 'article';
+        const affecte_stock = item.affecte_stock !== false ? 1 : 0;
+        
+        insertItem.run(
+          bonId, 
+          type,
+          item.article_id || null, 
+          item.designation || '',
+          item.unite || 'unité',
+          item.quantite, 
+          item.prix_unitaire, 
+          montant,
+          affecte_stock
+        );
+      });
+
+      return bonId;
+    });
+
+    const bonId = transaction();
+    return getBonCommandeById(bonId);
+  }
+
+  function updateBonCommandeStatut(id, statut) {
+    if (!['EN_COURS', 'LIVREE', 'ANNULEE'].includes(statut)) {
+      throw new Error('Statut invalide');
+    }
+
+    const transaction = db.transaction(() => {
+      const info = db.prepare('UPDATE bons_commande SET statut = ? WHERE id = ?').run(statut, id);
+      if (!info.changes) throw new Error('Bon de commande introuvable');
+
+      // Si le statut est LIVREE, mettre à jour le stock (uniquement pour les articles)
+      if (statut === 'LIVREE') {
+        const items = db.prepare(
+          `SELECT article_id, quantite, unite FROM bons_commande_items 
+           WHERE bon_commande_id = ? AND affecte_stock = 1 AND article_id IS NOT NULL`
+        ).all(id);
+
+        const bon = db.prepare('SELECT numero FROM bons_commande WHERE id = ?').get(id);
+
+        items.forEach(item => {
+          addMouvementStock({
+            article_id: item.article_id,
+            type: 'ENTREE',
+            quantite: item.quantite,
+            unite_saisie: item.unite,
+            reference: bon.numero,
+            motif: 'Réception bon de commande'
+          });
+        });
+      }
+
+      return true;
+    });
+
+    transaction();
+    return getBonCommandeById(id);
+  }
+
+  function deleteBonCommande(id) {
+    const bon = db.prepare('SELECT statut FROM bons_commande WHERE id = ?').get(id);
+    if (!bon) throw new Error('Bon de commande introuvable');
+    if (bon.statut === 'LIVREE') throw new Error('Impossible de supprimer un bon de commande livré');
+
+    const info = db.prepare('DELETE FROM bons_commande WHERE id = ?').run(id);
+    if (!info.changes) throw new Error('Bon de commande introuvable');
+    return true;
+  }
+
   return {
     verifyUser,
     getCategories,
@@ -856,7 +1276,25 @@ function createDatabaseService(app) {
     exportDatabase,
     importDatabase,
     categoryHasTransactions,
-    exportCategory
+    exportCategory,
+    // Nouvelles fonctions version 1.2
+    getFournisseurs,
+    addFournisseur,
+    updateFournisseur,
+    deleteFournisseur,
+    getArticles,
+    getArticleById,
+    addArticle,
+    updateArticle,
+    deleteArticle,
+    getArticlesAlertStock,
+    addMouvementStock,
+    getMouvementsStock,
+    getBonsCommande,
+    getBonCommandeById,
+    createBonCommande,
+    updateBonCommandeStatut,
+    deleteBonCommande
   };
 }
 

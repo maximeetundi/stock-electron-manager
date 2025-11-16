@@ -46,6 +46,32 @@ const api = {
     export: async (targetPath) => ipcRenderer.invoke('db:export', targetPath),
     import: async (sourcePath) => ipcRenderer.invoke('db:import', sourcePath)
   },
+  // Gestion de stock v1.2
+  fournisseurs: {
+    list: async () => ipcRenderer.invoke('fournisseurs:list'),
+    add: async (payload) => ipcRenderer.invoke('fournisseurs:add', payload),
+    update: async (id, payload) => ipcRenderer.invoke('fournisseurs:update', { id, payload }),
+    delete: async (id) => ipcRenderer.invoke('fournisseurs:delete', id)
+  },
+  articles: {
+    list: async () => ipcRenderer.invoke('articles:list'),
+    get: async (id) => ipcRenderer.invoke('articles:get', id),
+    add: async (payload) => ipcRenderer.invoke('articles:add', payload),
+    update: async (id, payload) => ipcRenderer.invoke('articles:update', { id, payload }),
+    delete: async (id) => ipcRenderer.invoke('articles:delete', id),
+    alertStock: async () => ipcRenderer.invoke('articles:alert-stock')
+  },
+  mouvements: {
+    add: async (payload) => ipcRenderer.invoke('mouvements:add', payload),
+    list: async (article_id, limit) => ipcRenderer.invoke('mouvements:list', { article_id, limit })
+  },
+  bonsCommande: {
+    list: async () => ipcRenderer.invoke('bons-commande:list'),
+    get: async (id) => ipcRenderer.invoke('bons-commande:get', id),
+    create: async (payload) => ipcRenderer.invoke('bons-commande:create', payload),
+    updateStatut: async (id, statut) => ipcRenderer.invoke('bons-commande:update-statut', { id, statut }),
+    delete: async (id) => ipcRenderer.invoke('bons-commande:delete', id)
+  },
   onThemeUpdated: (callback) => {
     const subscription = (_event, theme) => callback(theme);
     ipcRenderer.on('app:theme-updated', subscription);

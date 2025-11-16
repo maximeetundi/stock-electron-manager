@@ -9,25 +9,38 @@ import {
   DocumentArrowDownIcon,
   SunIcon,
   MoonIcon,
-  ArrowLeftOnRectangleIcon
+  ArrowLeftOnRectangleIcon,
+  CubeIcon,
+  ClipboardDocumentListIcon,
+  ChartBarSquareIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/state/AuthContext.jsx';
+import { useAppMode, APP_MODES } from '@/state/AppModeContext.jsx';
 import classNames from 'classnames';
 import pkg from '../../../package.json';
 
 const navigation = [
-  { name: 'Dashboard', to: '/', icon: ChartPieIcon },
-  { name: 'Nouvelle opération', to: '/operations', icon: BanknotesIcon },
-  { name: 'Statistiques', to: '/statistiques', icon: DocumentChartBarIcon },
-  { name: 'Rapports', to: '/rapports', icon: DocumentArrowDownIcon },
-  { name: 'Sauvegarde', to: '/sauvegarde', icon: DocumentArrowDownIcon },
-  { name: 'Paramètres', to: '/parametres', icon: Cog6ToothIcon },
-  { name: 'À propos', to: '/apropos', icon: Bars3BottomLeftIcon }
+  { name: 'Dashboard', to: '/', icon: ChartPieIcon, modes: ['finance', 'stock', 'all'] },
+  { name: 'Nouvelle opération', to: '/operations', icon: BanknotesIcon, modes: ['finance', 'all'] },
+  { name: 'Statistiques', to: '/statistiques', icon: DocumentChartBarIcon, modes: ['finance', 'all'] },
+  { name: 'Rapports finances', to: '/rapports', icon: DocumentArrowDownIcon, modes: ['finance', 'all'] },
+  { name: 'Gestion de stock', to: '/stock', icon: CubeIcon, modes: ['stock', 'all'] },
+  { name: 'Bons de commande', to: '/bons-commande', icon: ClipboardDocumentListIcon, modes: ['stock', 'all'] },
+  { name: 'Rapports stock', to: '/rapports-stock', icon: ChartBarSquareIcon, modes: ['stock', 'all'] },
+  { name: 'Sauvegarde', to: '/sauvegarde', icon: DocumentArrowDownIcon, modes: ['finance', 'stock', 'all'] },
+  { name: 'Paramètres', to: '/parametres', icon: Cog6ToothIcon, modes: ['finance', 'stock', 'all'] },
+  { name: 'À propos', to: '/apropos', icon: Bars3BottomLeftIcon, modes: ['finance', 'stock', 'all'] }
 ];
 
 export default function AppLayout() {
   const { logout, theme, toggleTheme } = useAuth();
+  const { appMode } = useAppMode();
   const location = useLocation();
+
+  // Filtrer la navigation selon le mode actif
+  const filteredNavigation = navigation.filter(item => 
+    item.modes.includes(appMode)
+  );
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-slate-950">
@@ -42,7 +55,7 @@ export default function AppLayout() {
           </div>
         </div>
         <nav className="flex-1 space-y-1 px-4">
-          {navigation.map((item) => (
+          {filteredNavigation.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -94,7 +107,7 @@ export default function AppLayout() {
         <header className="flex h-20 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-              {navigation.find((item) => item.to === location.pathname)?.name || 'Tableau de bord'}
+              {filteredNavigation.find((item) => item.to === location.pathname)?.name || 'Tableau de bord'}
             </h2>
           </div>
         </header>

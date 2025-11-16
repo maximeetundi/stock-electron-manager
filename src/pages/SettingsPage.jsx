@@ -10,10 +10,14 @@ import {
   TagIcon,
   PencilSquareIcon,
   TrashIcon,
-  CheckIcon
+  CheckIcon,
+  ChartBarIcon,
+  Square3Stack3DIcon
 } from '@heroicons/react/24/outline';
+import { useAppMode, APP_MODES } from '@/state/AppModeContext.jsx';
 
 export default function SettingsPage() {
+  const { appMode, changeMode } = useAppMode();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -31,6 +35,9 @@ export default function SettingsPage() {
   const [orgLogoPath, setOrgLogoPath] = useState('');
   const [logoPreview, setLogoPreview] = useState('');
   const [identityFeedback, setIdentityFeedback] = useState(null);
+  const [defaultDashboard, setDefaultDashboard] = useState('finances');
+  const [dashboardFeedback, setDashboardFeedback] = useState(null);
+  const [modeFeedback, setModeFeedback] = useState(null);
 
   const refreshCategories = async () => {
     try {
@@ -84,6 +91,7 @@ export default function SettingsPage() {
         const s = await appApi.getSettings();
         setOrgName(s.org_name || '');
         setOrgLogoPath(s.org_logo_path || '');
+        setDefaultDashboard(s.default_dashboard || 'finances');
         if (s.org_logo_path) {
           try { setLogoPreview(await fileApi.readAsDataUrl(s.org_logo_path)); } catch {}
         }
@@ -121,6 +129,28 @@ export default function SettingsPage() {
       }
     } catch (e) {
       setIdentityFeedback({ type: 'error', message: e.message || "Impossible d'enregistrer l'identité." });
+    }
+  };
+
+  const saveDashboardPreference = async () => {
+    try {
+      setDashboardFeedback(null);
+      await appApi.updateSettings({ default_dashboard: defaultDashboard });
+      setDashboardFeedback({ type: 'success', message: 'Préférence de dashboard enregistrée.' });
+    } catch (e) {
+      setDashboardFeedback({ type: 'error', message: e.message || "Impossible d'enregistrer la préférence." });
+    }
+  };
+
+  const handleModeChange = (newMode) => {
+    try {
+      setModeFeedback(null);
+      changeMode(newMode);
+      setModeFeedback({ type: 'success', message: 'Mode d\'application changé avec succès. Le menu a été mis à jour.' });
+      // Le feedback disparaît après 3 secondes
+      setTimeout(() => setModeFeedback(null), 3000);
+    } catch (e) {
+      setModeFeedback({ type: 'error', message: e.message || "Impossible de changer le mode." });
     }
   };
 
@@ -282,6 +312,134 @@ export default function SettingsPage() {
           )}>{identityFeedback.message}</p>
         )}
       </div>
+
+      {/* Dashboard par défaut */}
+      <div className="rounded-3xl bg-white/80 p-6 shadow-xl dark:bg-slate-900/80 max-w-2xl">
+        <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+          <ChartBarIcon className="h-5 w-5 text-primary-500" />
+          Dashboard par défaut
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Choisissez le dashboard qui s'affiche par défaut à l'ouverture de l'application.
+        </p>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300">
+            Mode par défaut
+          </label>
+          <select
+            value={defaultDashboard}
+            onChange={(e) => setDefaultDashboard(e.target.value)}
+            className="mt-2 w-full max-w-xs rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            <option value="finances">💰 Finances</option>
+            <option value="stock">📦 Stock</option>
+          </select>
+        </div>
+        <div className="mt-4">
+          <button 
+            type="button" 
+            onClick={saveDashboardPreference}
+            className="rounded-2xl bg-primary-500 px-5 py-2 text-sm font-semibold text-white shadow shadow-primary-500/40 transition hover:bg-primary-400"
+          >
+            Enregistrer
+          </button>
+        </div>
+        {dashboardFeedback && (
+          <p className={classNames(
+            'mt-3 rounded-2xl px-4 py-3 text-sm',
+            dashboardFeedback.type === 'success'
+              ? 'border border-emerald-400 bg-emerald-50 text-emerald-600 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-200'
+              : 'border border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200'
+          )}>{dashboardFeedback.message}</p>
+        )}
+      </div>
+
+      {/* Mode d'application */}
+      <div className="rounded-3xl bg-white/80 p-6 shadow-xl dark:bg-slate-900/80 max-w-2xl">
+        <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+          <Square3Stack3DIcon className="h-5 w-5 text-primary-500" />
+          Mode d'application
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Choisissez le mode d'utilisation de l'application. Cela détermine quelles fonctionnalités sont visibles dans le menu.
+        </p>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          {/* Mode Finance */}
+          <button
+            onClick={() => handleModeChange(APP_MODES.FINANCE)}
+            className={classNames(
+              'relative rounded-2xl border-2 p-4 text-left transition-all',
+              appMode === APP_MODES.FINANCE
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+                : 'border-slate-200 hover:border-primary-300 dark:border-slate-700 dark:hover:border-primary-600'
+            )}
+          >
+            {appMode === APP_MODES.FINANCE && (
+              <div className="absolute right-3 top-3">
+                <CheckIcon className="h-5 w-5 text-primary-500" />
+              </div>
+            )}
+            <div className="text-2xl mb-2">💰</div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">Finance</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Opérations financières, statistiques et rapports
+            </p>
+          </button>
+
+          {/* Mode Stock */}
+          <button
+            onClick={() => handleModeChange(APP_MODES.STOCK)}
+            className={classNames(
+              'relative rounded-2xl border-2 p-4 text-left transition-all',
+              appMode === APP_MODES.STOCK
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+                : 'border-slate-200 hover:border-primary-300 dark:border-slate-700 dark:hover:border-primary-600'
+            )}
+          >
+            {appMode === APP_MODES.STOCK && (
+              <div className="absolute right-3 top-3">
+                <CheckIcon className="h-5 w-5 text-primary-500" />
+              </div>
+            )}
+            <div className="text-2xl mb-2">📦</div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">Stock</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Gestion de stock, bons de commande et rapports stock
+            </p>
+          </button>
+
+          {/* Mode All */}
+          <button
+            onClick={() => handleModeChange(APP_MODES.ALL)}
+            className={classNames(
+              'relative rounded-2xl border-2 p-4 text-left transition-all',
+              appMode === APP_MODES.ALL
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+                : 'border-slate-200 hover:border-primary-300 dark:border-slate-700 dark:hover:border-primary-600'
+            )}
+          >
+            {appMode === APP_MODES.ALL && (
+              <div className="absolute right-3 top-3">
+                <CheckIcon className="h-5 w-5 text-primary-500" />
+              </div>
+            )}
+            <div className="text-2xl mb-2">🌐</div>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100">Tout</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Toutes les fonctionnalités (finance + stock)
+            </p>
+          </button>
+        </div>
+        {modeFeedback && (
+          <p className={classNames(
+            'mt-4 rounded-2xl px-4 py-3 text-sm',
+            modeFeedback.type === 'success'
+              ? 'border border-emerald-400 bg-emerald-50 text-emerald-600 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-200'
+              : 'border border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200'
+          )}>{modeFeedback.message}</p>
+        )}
+      </div>
+
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">

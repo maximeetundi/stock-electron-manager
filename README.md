@@ -1,16 +1,32 @@
-# Ecole Finances
+# Ecole Finances - Version 1.2.0
 
-Application de gestion financière pour complexe scolaire développée avec Electron, React et SQLite.
+Application de gestion financière et de stock pour complexe scolaire développée avec Electron, React et SQLite.
 
 ## Description
 
-Ecole Finances est une application desktop moderne pour la gestion des finances d'un complexe scolaire. Elle permet de :
+Ecole Finances est une application desktop moderne pour la gestion des finances et du stock d'un complexe scolaire. Elle permet de :
 
+### Gestion Financière
 - 📊 **Suivi des finances** : Entrées et sorties par catégories
 - 📈 **Statistiques** : Graphiques et analyses détaillées
 - 📋 **Rapports** : Génération de rapports PDF et Excel
-- ⚙️ **Paramètres** : Gestion des catégories et paramètres utilisateur
 - 🎯 **Tableau de bord** : Vue d'ensemble des flux financiers
+
+### Gestion de Stock (Nouveau v1.2)
+- 📦 **Gestion des articles** : Catalogue complet avec codes, prix et quantités
+- 🏢 **Gestion des fournisseurs** : Base de données des fournisseurs
+- 📝 **Bons de commande** : Création et suivi des commandes
+- ⚠️ **Alertes de stock** : Notification automatique des stocks faibles
+- 📊 **Mouvements de stock** : Traçabilité complète (entrées, sorties, ajustements)
+- 📄 **Export PDF** : Génération de bons de commande au format PDF
+- 📈 **Rapports et statistiques** : Rapports complets avec exports PDF/Excel
+  - État des stocks (valeurs, alertes)
+  - Historique des bons de commande
+  - Suivi des mouvements de stock
+
+### Autres fonctionnalités
+- ⚙️ **Paramètres** : Gestion des catégories et paramètres utilisateur
+- 💾 **Sauvegarde** : Export/Import de la base de données
 
 ## Technologies
 
@@ -73,24 +89,45 @@ ecole-finances/
 
 ## Pages principales
 
+### Gestion Financière
 - **Dashboard** (`/`) - Vue d'ensemble avec sélecteur de période
-- **Nouvelle opération** (`/new`) - Formulaire de création de transactions
-- **Rapports** (`/reports`) - Filtres et génération de rapports
-- **Statistiques** (`/statistics`) - Graphiques et analyses
-- **Paramètres** (`/settings`) - Configuration utilisateur
+- **Nouvelle opération** (`/operations`) - Formulaire de création de transactions
+- **Rapports** (`/rapports`) - Filtres et génération de rapports
+- **Statistiques** (`/statistiques`) - Graphiques et analyses
 
-## Fonctionnalités
+### Gestion de Stock (v1.2)
+- **Gestion de stock** (`/stock`) - Articles, fournisseurs et alertes
+- **Bons de commande** (`/bons-commande`) - Création et suivi des commandes
 
-### Gestion des transactions
-- Création d'entrées et sorties
-- Catégorisation automatique
-- Historique des opérations
+### Configuration
+- **Sauvegarde** (`/sauvegarde`) - Export/Import de la base de données
+- **Paramètres** (`/parametres`) - Configuration utilisateur
+- **À propos** (`/apropos`) - Informations sur l'application
 
-### Filtres et rapports
+## Fonctionnalités détaillées
+
+### Gestion des transactions financières
+- Création d'entrées et sorties avec catégorisation
+- Historique complet des opérations
 - Filtrage par période (jour, semaine, mois, trimestre, semestre, année)
 - Filtrage par type (toutes, entrées, sorties)
 - Filtrage par catégorie
-- Export PDF et Excel
+- Export PDF et Excel des rapports
+
+### Gestion de stock (v1.2)
+- **Articles** : Code, désignation, unité, prix unitaire, stock actuel et minimum
+- **Fournisseurs** : Nom, adresse, téléphone, email
+- **Mouvements de stock** : 
+  - Entrées (réception de marchandises)
+  - Sorties (utilisation/vente)
+  - Ajustements (corrections d'inventaire)
+- **Alertes automatiques** : Notification quand le stock atteint le seuil minimum
+- **Bons de commande** :
+  - Création avec sélection fournisseur et articles
+  - Calcul automatique du montant total
+  - Suivi du statut (EN_COURS, LIVREE, ANNULEE)
+  - Mise à jour automatique du stock à la réception
+  - Export PDF du bon de commande
 
 ### Statistiques
 - Graphiques en barres par catégorie
@@ -99,8 +136,24 @@ ecole-finances/
 
 ### Sécurité
 - Authentification par mot de passe
-- Chiffrement des données sensibles
+- Codes de récupération
 - Gestion des sessions
+- Sauvegarde automatique avant suppression de catégories
+
+## Nouveautés Version 1.2.0
+
+### Gestion complète de stock
+- 📦 **Articles** : Gestion d'un catalogue d'articles avec codes, prix et quantités
+- 🏢 **Fournisseurs** : Base de données complète des fournisseurs (nom, adresse, contacts)
+- 📝 **Bons de commande** : Création, suivi et export PDF des bons de commande
+- 📊 **Mouvements de stock** : Traçabilité complète avec entrées, sorties et ajustements
+- ⚠️ **Alertes** : Notification automatique des articles en rupture ou stock faible
+- 🔄 **Mise à jour automatique** : Le stock est mis à jour automatiquement lors de la réception des commandes
+
+### Améliorations de la base de données
+- Nouvelles tables : `fournisseurs`, `articles`, `bons_commande`, `bons_commande_items`, `mouvements_stock`
+- Relations entre les tables pour assurer l'intégrité des données
+- Contraintes de validation pour éviter les erreurs de saisie
 
 ## Configuration
 

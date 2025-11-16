@@ -45,3 +45,6 @@ CardContent.propTypes = {
   loading: PropTypes.bool,
   children: PropTypes.node
 };
+
+// Export par défaut pour la compatibilité
+export default Card;

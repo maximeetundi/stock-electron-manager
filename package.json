@@ -1,8 +1,8 @@
 {
   "name": "ecole-finances",
-  "version": "0.1.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "Application de gestion financière pour complexe scolaire (Electron + React + SQLite)",
+  "description": "Application de gestion financière et de Stock pour complexe scolaire",
   "main": "electron/main.js",
   "author": "Maxime ETUNDI",
   "scripts": {
