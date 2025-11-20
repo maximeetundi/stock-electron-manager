@@ -483,6 +483,24 @@ function setupIPC() {
     }
   });
 
+  ipcMain.handle('mouvements:update', (_event, { id, payload }) => {
+    try {
+      const data = dbService.updateMouvementStock(id, payload);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('mouvements:delete', (_event, id) => {
+    try {
+      const data = dbService.deleteMouvementStock(id);
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
   // ========== GESTION DES BONS DE COMMANDE (v1.2) ==========
   ipcMain.handle('bons-commande:list', () => {
     try {

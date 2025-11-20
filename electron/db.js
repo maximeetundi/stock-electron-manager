@@ -1028,7 +1028,7 @@ function createDatabaseService(app) {
   }
 
   // ========== GESTION DES MOUVEMENTS DE STOCK ==========
-  function addMouvementStock({ article_id, type, quantite, reference, motif, unite_saisie }) {
+  function addMouvementStock({ article_id, type, quantite, reference, motif, unite_saisie, date_mouvement }) {
     if (!['ENTREE', 'SORTIE', 'AJUSTEMENT'].includes(type)) {
       throw new Error('Type de mouvement invalide');
     }
@@ -1065,9 +1065,12 @@ function createDatabaseService(app) {
       newStock = qteEffective;
     }
 
+    // Formater la date: si fournie, l'utiliser; sinon utiliser la date actuelle
+    const dateMouvement = date_mouvement ? new Date(date_mouvement).toISOString() : new Date().toISOString();
+
     const transaction = db.transaction(() => {
       const info = db.prepare(
-        'INSERT INTO mouvements_stock (article_id, type, quantite, reference, motif, quantite_saisie, unite_saisie) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO mouvements_stock (article_id, type, quantite, reference, motif, quantite_saisie, unite_saisie, date_mouvement) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       ).run(
         article_id,
         type,
@@ -1075,7 +1078,8 @@ function createDatabaseService(app) {
         reference?.trim() || null,
         motif?.trim() || null,
         qte,
-        saisieUnite || baseUnite || null
+        saisieUnite || baseUnite || null,
+        dateMouvement
       );
       
       db.prepare('UPDATE articles SET quantite_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
@@ -1106,6 +1110,53 @@ function createDatabaseService(app) {
        ORDER BY m.date_mouvement DESC
        LIMIT ?`
     ).all(limit);
+  }
+
+  function updateMouvementStock(id, { quantite, reference, motif, date_mouvement }) {
+    const mouvement = db.prepare('SELECT * FROM mouvements_stock WHERE id = ?').get(id);
+    if (!mouvement) throw new Error('Mouvement introuvable');
+
+    const dateMouvement = date_mouvement ? new Date(date_mouvement).toISOString() : mouvement.date_mouvement;
+
+    db.prepare(
+      'UPDATE mouvements_stock SET quantite = ?, reference = ?, motif = ?, date_mouvement = ? WHERE id = ?'
+    ).run(
+      quantite !== undefined ? quantite : mouvement.quantite,
+      reference !== undefined ? (reference?.trim() || null) : mouvement.reference,
+      motif !== undefined ? (motif?.trim() || null) : mouvement.motif,
+      dateMouvement,
+      id
+    );
+
+    return db.prepare('SELECT * FROM mouvements_stock WHERE id = ?').get(id);
+  }
+
+  function deleteMouvementStock(id) {
+    const mouvement = db.prepare('SELECT * FROM mouvements_stock WHERE id = ?').get(id);
+    if (!mouvement) throw new Error('Mouvement introuvable');
+
+    const article = getArticleById(mouvement.article_id);
+    if (!article) throw new Error('Article introuvable');
+
+    // Annuler l'effet du mouvement sur le stock
+    let newStock = article.quantite_stock;
+    if (mouvement.type === 'ENTREE') {
+      newStock -= mouvement.quantite;
+    } else if (mouvement.type === 'SORTIE') {
+      newStock += mouvement.quantite;
+    } else if (mouvement.type === 'AJUSTEMENT') {
+      // Pour un ajustement, on ne peut pas vraiment annuler sans connaître l'ancien stock
+      // On va juste supprimer le mouvement
+    }
+
+    const transaction = db.transaction(() => {
+      db.prepare('DELETE FROM mouvements_stock WHERE id = ?').run(id);
+      db.prepare('UPDATE articles SET quantite_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(newStock, mouvement.article_id);
+    });
+
+    transaction();
+    return true;
   }
 
   // ========== GESTION DES BONS DE COMMANDE ==========
@@ -1290,6 +1341,8 @@ function createDatabaseService(app) {
     getArticlesAlertStock,
     addMouvementStock,
     getMouvementsStock,
+    updateMouvementStock,
+    deleteMouvementStock,
     getBonsCommande,
     getBonCommandeById,
     createBonCommande,

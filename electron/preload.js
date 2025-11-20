@@ -63,7 +63,9 @@ const api = {
   },
   mouvements: {
     add: async (payload) => ipcRenderer.invoke('mouvements:add', payload),
-    list: async (article_id, limit) => ipcRenderer.invoke('mouvements:list', { article_id, limit })
+    list: async (article_id, limit) => ipcRenderer.invoke('mouvements:list', { article_id, limit }),
+    update: async (id, payload) => ipcRenderer.invoke('mouvements:update', { id, payload }),
+    delete: async (id) => ipcRenderer.invoke('mouvements:delete', id)
   },
   bonsCommande: {
     list: async () => ipcRenderer.invoke('bons-commande:list'),

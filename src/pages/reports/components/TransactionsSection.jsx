@@ -10,10 +10,10 @@ import { formatCurrency, formatDate, formatTime } from '@/utils/format';
 
 export default function TransactionsSection({
   transactions,
-  loading,
-  onEdit,
-  onDelete,
-  emptyMessage,
+  loading = false,
+  onEdit = undefined,
+  onDelete = undefined,
+  emptyMessage = 'Aucune opération enregistrée pour cette période.',
   order,
   onOrderChange,
   page,
@@ -374,12 +374,4 @@ TransactionsSection.propTypes = {
   onCategoryChange: PropTypes.func.isRequired,
   onTypeChange: PropTypes.func.isRequired,
   baseIndex: PropTypes.number
-};
-
-TransactionsSection.defaultProps = {
-  loading: false,
-  onEdit: undefined,
-  onDelete: undefined,
-  emptyMessage: 'Aucune opération enregistrée pour cette période.',
-  baseIndex: 0
 };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   PlusIcon,
   PencilIcon,
@@ -15,10 +16,14 @@ import Card from '@/components/ui/Card';
 import MouvementsTab from '@/components/stock/MouvementsTab';
 
 export default function StockPage() {
+  const [searchParams] = useSearchParams();
   const [articles, setArticles] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
   const [articlesAlert, setArticlesAlert] = useState([]);
-  const [activeTab, setActiveTab] = useState('articles');
+  const [activeTab, setActiveTab] = useState(() => {
+    // Lire le paramètre 'tab' de l'URL, sinon 'articles' par défaut
+    return searchParams.get('tab') || 'articles';
+  });
   const [showModal, setShowModal] = useState(false);
   const [showFournisseurModal, setShowFournisseurModal] = useState(false);
   const [editingArticle, setEditingArticle] = useState(null);

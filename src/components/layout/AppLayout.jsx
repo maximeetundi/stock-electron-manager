@@ -12,10 +12,12 @@ import {
   ArrowLeftOnRectangleIcon,
   CubeIcon,
   ClipboardDocumentListIcon,
-  ChartBarSquareIcon
+  ChartBarSquareIcon,
+  ArrowsRightLeftIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/state/AuthContext.jsx';
 import { useAppMode, APP_MODES } from '@/state/AppModeContext.jsx';
+import FloatingActionButton from '@/components/stock/FloatingActionButton';
 import classNames from 'classnames';
 import pkg from '../../../package.json';
 
@@ -25,6 +27,7 @@ const navigation = [
   { name: 'Statistiques', to: '/statistiques', icon: DocumentChartBarIcon, modes: ['finance', 'all'] },
   { name: 'Rapports finances', to: '/rapports', icon: DocumentArrowDownIcon, modes: ['finance', 'all'] },
   { name: 'Gestion de stock', to: '/stock', icon: CubeIcon, modes: ['stock', 'all'] },
+  { name: 'Mouvements de stock', to: '/mouvements', icon: ArrowsRightLeftIcon, modes: ['stock', 'all'] },
   { name: 'Bons de commande', to: '/bons-commande', icon: ClipboardDocumentListIcon, modes: ['stock', 'all'] },
   { name: 'Rapports stock', to: '/rapports-stock', icon: ChartBarSquareIcon, modes: ['stock', 'all'] },
   { name: 'Sauvegarde', to: '/sauvegarde', icon: DocumentArrowDownIcon, modes: ['finance', 'stock', 'all'] },
@@ -117,6 +120,9 @@ export default function AppLayout() {
           </div>
         </main>
       </div>
+      
+      {/* Bouton flottant pour actions rapides */}
+      <FloatingActionButton />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
   EyeIcon,
   TrashIcon,
   DocumentArrowDownIcon,
+  PrinterIcon,
   CheckIcon,
   XMarkIcon,
   MagnifyingGlassIcon,
@@ -16,6 +18,7 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
 export default function BonsCommandePage() {
+  const navigate = useNavigate();
   const [bonsCommande, setBonsCommande] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
   const [articles, setArticles] = useState([]);
@@ -24,6 +27,8 @@ export default function BonsCommandePage() {
   const [selectedBon, setSelectedBon] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printPreviewHtml, setPrintPreviewHtml] = useState('');
 
   // Pagination et recherche pour bons de commande
   const [searchTerm, setSearchTerm] = useState('');
@@ -306,25 +311,175 @@ export default function BonsCommandePage() {
     }
     
     // Note importante
-    notesY = Math.max(notesY, finalY + 15);
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'italic');
-    doc.text('Important:', 20, notesY);
-    doc.text('Le détaillé de ce Bon de Commande doit être', 20, notesY + 5);
-    doc.text('rédigé avec votre facture sans faute ni perte.', 20, notesY + 10);
-    doc.setFont(undefined, 'normal');
+    // notesY = Math.max(notesY, finalY + 15);
+    // doc.setFontSize(8);
+    // doc.setFont(undefined, 'italic');
+    // doc.text('Important:', 20, notesY);
+    // doc.text('Le détaillé de ce Bon de Commande doit être', 20, notesY + 5);
+    // doc.text('rédigé avec votre facture sans faute ni perte.', 20, notesY + 10);
+    // doc.setFont(undefined, 'normal');
     
     // Signatures en bas
-    const signatureY = 260;
-    doc.setFontSize(10);
-    doc.text('Le Directeur Administratif et Financier', 20, signatureY);
-    doc.text('Le Directeur Général', 120, signatureY);
+    // const signatureY = 260;
+    // doc.setFontSize(10);
+    // doc.text('Le Directeur Administratif et Financier', 20, signatureY);
+    // doc.text('Le Directeur Général', 120, signatureY);
     
-    // Ligne de signature
-    doc.line(20, signatureY + 15, 80, signatureY + 15);
-    doc.line(120, signatureY + 15, 180, signatureY + 15);
+    // // Ligne de signature
+    // doc.line(20, signatureY + 15, 80, signatureY + 15);
+    // doc.line(120, signatureY + 15, 180, signatureY + 15);
     
     doc.save(`bon-commande-${bon.numero}.pdf`);
+  };
+
+  const generateBonPrintHtml = (bon, items, fournisseur) => {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Bon de Commande</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .header h1 { margin: 0; color: #1e293b; font-size: 24px; }
+            .header p { margin: 5px 0; color: #64748b; }
+            .content { max-width: 800px; margin: 0 auto; }
+            .section { margin-bottom: 20px; }
+            .section-title { font-weight: bold; color: #1e293b; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px; }
+            .field { display: flex; margin-bottom: 10px; }
+            .field-label { font-weight: bold; width: 150px; color: #475569; }
+            .field-value { flex: 1; color: #1e293b; }
+            .status-badge { display: inline-block; padding: 5px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+            .status-en_cours { background-color: #dbeafe; color: #1e40af; }
+            .status-livree { background-color: #dcfce7; color: #166534; }
+            .status-annulee { background-color: #fee2e2; color: #991b1b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background-color: #f1f5f9; padding: 10px; text-align: left; font-weight: bold; border-bottom: 2px solid #e2e8f0; }
+            td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+            .total-row { font-weight: bold; background-color: #f8fafc; }
+            .footer { margin-top: 30px; text-align: center; color: #94a3b8; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Bon de Commande</h1>
+            <p>N° ${bon.numero} - Imprimé le ${new Date().toLocaleString('fr-FR')}</p>
+          </div>
+          
+          <div class="content">
+            <div class="section">
+              <div class="section-title">Informations du bon</div>
+              <div class="field">
+                <div class="field-label">Numéro:</div>
+                <div class="field-value">${bon.numero}</div>
+              </div>
+              <div class="field">
+                <div class="field-label">Date:</div>
+                <div class="field-value">${new Date(bon.date_commande).toLocaleString('fr-FR')}</div>
+              </div>
+              <div class="field">
+                <div class="field-label">Statut:</div>
+                <div class="field-value">
+                  <span class="status-badge status-${bon.statut.toLowerCase()}">${bon.statut}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Fournisseur</div>
+              <div class="field">
+                <div class="field-label">Nom:</div>
+                <div class="field-value">${bon.fournisseur_nom}</div>
+              </div>
+              ${fournisseur?.contact ? `
+              <div class="field">
+                <div class="field-label">Contact:</div>
+                <div class="field-value">${fournisseur.contact}</div>
+              </div>
+              ` : ''}
+              ${fournisseur?.email ? `
+              <div class="field">
+                <div class="field-label">Email:</div>
+                <div class="field-value">${fournisseur.email}</div>
+              </div>
+              ` : ''}
+            </div>
+
+            <div class="section">
+              <div class="section-title">Articles commandés</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Désignation</th>
+                    <th style="text-align: right;">Quantité</th>
+                    <th style="text-align: right;">Prix unitaire</th>
+                    <th style="text-align: right;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${items.map(item => `
+                  <tr>
+                    <td>${item.code}</td>
+                    <td>${item.designation}</td>
+                    <td style="text-align: right;">${item.quantite}</td>
+                    <td style="text-align: right;">${item.prix_unitaire.toLocaleString('fr-FR')} FCFA</td>
+                    <td style="text-align: right;">${(item.quantite * item.prix_unitaire).toLocaleString('fr-FR')} FCFA</td>
+                  </tr>
+                  `).join('')}
+                  <tr class="total-row">
+                    <td colspan="4" style="text-align: right;">Montant total:</td>
+                    <td style="text-align: right;">${bon.montant_total.toLocaleString('fr-FR')} FCFA</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            ${bon.observations ? `
+            <div class="section">
+              <div class="section-title">Observations</div>
+              <div class="field-value">${bon.observations}</div>
+            </div>
+            ` : ''}
+
+            <div class="footer">
+              <p>Ce document a été généré automatiquement par le système de gestion de stock</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+  };
+
+  const handlePrintBon = async (bon) => {
+    try {
+      // Charger les détails complets du bon
+      const result = await window.api.bonsCommande.get(bon.id);
+      if (!result.ok) {
+        alert('Erreur lors du chargement du bon');
+        return;
+      }
+      
+      const bonDetails = result.data;
+      const fournisseur = fournisseurs.find(f => f.id === bon.fournisseur_id);
+      const items = bonDetails.items || [];
+      
+      const html = generateBonPrintHtml(bon, items, fournisseur);
+      setPrintPreviewHtml(html);
+      setShowPrintPreview(true);
+    } catch (err) {
+      console.error('Erreur impression bon:', err);
+      alert('Erreur lors de l\'impression du bon');
+    }
+  };
+
+  const handleConfirmPrintBon = () => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(printPreviewHtml);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 250);
+    setShowPrintPreview(false);
   };
 
   const resetForm = () => {
@@ -468,13 +623,22 @@ export default function BonsCommandePage() {
               )}
             </div>
 
-            <button
-              onClick={() => { resetForm(); setShowModal(true); }}
-              className="flex items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
-            >
-              <PlusIcon className="h-5 w-5" />
-              Nouveau bon
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { resetForm(); setShowModal(true); }}
+                className="flex items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+              >
+                <PlusIcon className="h-5 w-5" />
+                Nouveau bon
+              </button>
+              <button
+                onClick={() => navigate('/stock?tab=fournisseurs')}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                <PlusIcon className="h-5 w-5" />
+                Nouveau fournisseur
+              </button>
+            </div>
           </div>
         </div>
 
@@ -513,6 +677,20 @@ export default function BonsCommandePage() {
                         title="Voir détails"
                       >
                         <EyeIcon className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => handlePrintBon(bon)}
+                        className="rounded p-1 text-green-600 hover:bg-green-50"
+                        title="Imprimer"
+                      >
+                        <PrinterIcon className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => exportPDF(bon)}
+                        className="rounded p-1 text-purple-600 hover:bg-purple-50"
+                        title="Exporter en PDF"
+                      >
+                        <DocumentArrowDownIcon className="h-5 w-5" />
                       </button>
                       {bon.statut === 'EN_COURS' && (
                         <>
@@ -588,11 +766,24 @@ export default function BonsCommandePage() {
       {/* Modal création bon */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-4xl rounded-xl bg-white p-6 dark:bg-slate-900">
-            <h2 className="mb-4 text-xl font-bold">Nouveau bon de commande</h2>
-            {error && <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-            
-            <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="w-full max-w-4xl max-h-[90vh] rounded-xl bg-white dark:bg-slate-900 flex flex-col overflow-hidden">
+            {/* En-tête */}
+            <div className="border-b px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Nouveau bon de commande</h2>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Contenu scrollable */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {error && <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+              
+              <form id="bonForm" onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium">Fournisseur *</label>
@@ -801,23 +992,27 @@ export default function BonsCommandePage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setShowModal(false); resetForm(); setError(null); }}
-                  className="rounded border px-4 py-2 text-sm font-medium"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="rounded bg-primary-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  {loading ? 'Création...' : 'Créer le bon'}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
+
+            {/* Footer avec boutons */}
+            <div className="border-t px-6 py-4 flex justify-end gap-3 bg-slate-50 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => { setShowModal(false); resetForm(); setError(null); }}
+                className="rounded border px-4 py-2 text-sm font-medium"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                form="bonForm"
+                disabled={loading}
+                className="rounded bg-primary-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {loading ? 'Création...' : 'Créer le bon'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -901,6 +1096,46 @@ export default function BonsCommandePage() {
                 className="rounded border px-4 py-2 text-sm font-medium"
               >
                 Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal aperçu avant impression */}
+      {showPrintPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-xl overflow-hidden flex flex-col">
+            {/* En-tête du modal */}
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <h2 className="text-lg font-semibold">Aperçu avant impression</h2>
+              <button
+                onClick={() => setShowPrintPreview(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Contenu du document */}
+            <div className="flex-1 overflow-auto bg-slate-50 p-6">
+              <div className="bg-white rounded shadow-sm p-8" dangerouslySetInnerHTML={{ __html: printPreviewHtml.replace(/<html>|<\/html>|<head>.*?<\/head>|<!DOCTYPE html>/gi, '') }} />
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="border-t px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowPrintPreview(false)}
+                className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmPrintBon}
+                className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+              >
+                <PrinterIcon className="h-4 w-4" />
+                Imprimer
               </button>
             </div>
           </div>

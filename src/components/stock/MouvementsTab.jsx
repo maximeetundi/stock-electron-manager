@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import {
   ArrowUpIcon,
   ArrowDownIcon,
@@ -14,6 +14,7 @@ export default function MouvementsTab() {
   const [mouvements, setMouvements] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState('');
 
   // États pour la recherche d'articles
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,6 +24,9 @@ export default function MouvementsTab() {
   // États pour l'infinite scroll
   const [displayedCount, setDisplayedCount] = useState(15); // Nombre d'articles affichés
   const ITEMS_PER_PAGE = 15; // Charger 15 articles à la fois
+  
+  // Ref pour l'input de recherche
+  const searchInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
     article_id: '',
@@ -30,7 +34,8 @@ export default function MouvementsTab() {
     quantite: 1,
     reference: '',
     motif: '',
-    unite_saisie: ''
+    unite_saisie: '',
+    date_mouvement: new Date().toISOString().split('T')[0]
   });
 
   const loadArticles = useCallback(async () => {
@@ -59,30 +64,50 @@ export default function MouvementsTab() {
     loadData();
   }, [loadData]);
 
-  // Fermer le dropdown si on clique en dehors
+  useLayoutEffect(() => {
+    if (showDropdown) {
+      requestAnimationFrame(() => {
+        if (searchInputRef.current) {
+          try {
+            searchInputRef.current.focus({ preventScroll: true });
+            searchInputRef.current.select();
+          } catch (_) {}
+        }
+      });
+    }
+  }, [showDropdown]);
+
+
+  // Fermer le dropdown si on clique en dehors (gestion fiable via ref + pointerdown)
+  const selectWrapperRef = useRef(null);
   useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (!e.target.closest('.relative')) {
+    const onPointerDown = (e) => {
+      if (selectWrapperRef.current && !selectWrapperRef.current.contains(e.target)) {
         setShowDropdown(false);
       }
     };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
   }, []);
 
-  // Filtrer les articles selon la recherche
-  const allFilteredArticles = searchTerm 
-    ? articles.filter(article => {
-        const search = searchTerm.toLowerCase();
-        return (
-          article.code.toLowerCase().includes(search) ||
-          article.designation.toLowerCase().includes(search)
-        );
-      })
-    : articles; // Si pas de recherche, afficher tous les articles
+  // Filtrer les articles selon la recherche (simple et direct)
+  const allFilteredArticles = useMemo(() => {
+    if (!searchTerm) return articles;
+    
+    const search = searchTerm.toLowerCase();
+    return articles.filter(article => {
+      // Vérifier que l'article a les propriétés nécessaires
+      if (!article.code || !article.designation) return false;
+      return article.code.toLowerCase().includes(search) ||
+             article.designation.toLowerCase().includes(search);
+    });
+  }, [articles, searchTerm]);
 
   // Limiter l'affichage pour l'infinite scroll
-  const filteredArticles = allFilteredArticles.slice(0, displayedCount);
+  const filteredArticles = useMemo(() => 
+    allFilteredArticles.slice(0, displayedCount),
+    [allFilteredArticles, displayedCount]
+  );
   const hasMore = allFilteredArticles.length > displayedCount;
 
   // Fonction pour charger plus d'articles
@@ -106,31 +131,67 @@ export default function MouvementsTab() {
   }, [searchTerm]);
 
   // Sélectionner un article
-  const handleSelectArticle = (article) => {
+  const handleSelectArticle = useCallback((article) => {
     setSelectedArticle(article);
-    setFormData({ ...formData, article_id: article.id, unite_saisie: article.unite || '' });
+    setFormData(prev => ({ ...prev, article_id: article.id, unite_saisie: article.unite || '' }));
     setSearchTerm(''); // Réinitialiser la recherche
     setShowDropdown(false);
-  };
+  }, []);
 
   // Réinitialiser la sélection
-  const handleClearSelection = () => {
+  const handleClearSelection = useCallback(() => {
     setSelectedArticle(null);
-    setFormData({ ...formData, article_id: '', unite_saisie: '' });
+    setFormData(prev => ({ ...prev, article_id: '', unite_saisie: '' }));
     setSearchTerm('');
     setDisplayedCount(ITEMS_PER_PAGE); // Reset à 15 articles
-    setShowDropdown(true); // Ouvrir directement pour resélectionner
-  };
+    setShowDropdown(true);
+    setTimeout(() => {
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+        searchInputRef.current.select();
+      }
+    }, 0);
+  }, []);
 
   // Réinitialiser le compteur quand on ouvre le dropdown
-  const handleToggleDropdown = () => {
-    if (!showDropdown) {
-      setDisplayedCount(ITEMS_PER_PAGE); // Reset à 15 articles
-    }
-    setShowDropdown(!showDropdown);
-  };
+  const handleToggleDropdown = useCallback(() => {
+    setShowDropdown(prev => {
+      const next = !prev;
+      if (next) {
+        setTimeout(() => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+            searchInputRef.current.select();
+          }
+        }, 0);
+      }
+      return next;
+    });
+    setDisplayedCount(ITEMS_PER_PAGE);
+  }, []);
 
-  const handleSubmit = async (e) => {
+  // Handlers optimisés pour chaque champ
+  const handleQuantiteChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, quantite: parseFloat(e.target.value) || 0 }));
+  }, []);
+
+  const handleTypeChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, type: e.target.value }));
+  }, []);
+
+  const handleDateChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, date_mouvement: e.target.value }));
+  }, []);
+
+  const handleReferenceChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, reference: e.target.value }));
+  }, []);
+
+  const handleMotifChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, motif: e.target.value }));
+  }, []);
+
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
     if (!selectedArticle || !formData.article_id) {
@@ -149,19 +210,34 @@ export default function MouvementsTab() {
     try {
       const result = await window.api.mouvements.add(formData);
       if (result.ok) {
-        alert('Mouvement enregistré avec succès');
+        setSuccess('Mouvement enregistré avec succès');
+        setTimeout(() => setSuccess(''), 2000);
+        // Réinitialiser le formulaire
         setFormData({
           article_id: '',
           type: 'SORTIE',
           quantite: 1,
           reference: '',
           motif: '',
-          unite_saisie: ''
+          unite_saisie: '',
+          date_mouvement: new Date().toISOString().split('T')[0]
         });
-        handleClearSelection();
+        setSelectedArticle(null);
+        setSearchTerm('');
+        setDisplayedCount(ITEMS_PER_PAGE);
+        setShowDropdown(true);
+        setTimeout(() => {
+          if (searchInputRef.current) {
+            try {
+              searchInputRef.current.focus({ preventScroll: true });
+              searchInputRef.current.select();
+            } catch (_) {}
+          }
+        }, 0);
         setLoading(false);
-        // Charger les données en arrière-plan sans bloquer l'interface
-        loadData();
+        setError(null);
+        // Recharger les mouvements de manière asynchrone sans bloquer
+        loadMouvements().catch(err => console.error('Erreur chargement mouvements', err));
       } else {
         setError(result.error || 'Erreur lors de l\'enregistrement');
         setLoading(false);
@@ -170,12 +246,12 @@ export default function MouvementsTab() {
       setError(err.message || 'Erreur lors de l\'enregistrement');
       setLoading(false);
     }
-  };
+  }, [formData, selectedArticle, loadMouvements]);
 
-  const getArticleInfo = (article_id) => {
+  const getArticleInfo = useCallback((article_id) => {
     const article = articles.find(a => a.id === parseInt(article_id));
     return article ? `Stock actuel: ${article.quantite_stock} ${article.unite}` : '';
-  };
+  }, [articles]);
 
   return (
     <div className="space-y-6">
@@ -185,13 +261,14 @@ export default function MouvementsTab() {
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="relative">
+            <div className="relative" ref={selectWrapperRef}>
               <label className="block text-sm font-medium mb-2">Article *</label>
               
               {/* Bouton principal (comme un select) */}
               <button
                 type="button"
                 onClick={handleToggleDropdown}
+                onMouseDown={(e) => e.preventDefault()}
                 className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-left flex items-center justify-between hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <span className={selectedArticle ? 'text-slate-900' : 'text-slate-400'}>
@@ -204,17 +281,27 @@ export default function MouvementsTab() {
 
               {/* Dropdown recherchable */}
               {showDropdown && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-xl">
+                <div
+                  className="article-dropdown absolute z-50 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-2xl"
+                  onPointerDown={(e) => { e.stopPropagation(); if (searchInputRef.current) { try { searchInputRef.current.focus({ preventScroll: true }); } catch (_) {} } }}
+                  onClick={(e) => { e.stopPropagation(); if (searchInputRef.current) { try { searchInputRef.current.focus({ preventScroll: true }); } catch (_) {} } }}
+                >
                   {/* Champ de recherche dans le dropdown */}
                   <div className="p-2 border-b border-slate-200 bg-slate-50">
                     <div className="relative">
                       <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                       <input
+                        ref={searchInputRef}
                         type="text"
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Rechercher..."
-                        className="w-full rounded border border-slate-300 pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        onChange={(e) => {
+                          setSearchTerm(e.target.value);
+                          setDisplayedCount(ITEMS_PER_PAGE);
+                        }}
+                        placeholder="Rechercher un article..."
+                        className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => { if (e.key === 'Escape') setShowDropdown(false); }}
                         autoFocus
                       />
                       {searchTerm && (
@@ -230,7 +317,7 @@ export default function MouvementsTab() {
                   </div>
 
                   {/* Liste des articles avec infinite scroll */}
-                  <div className="max-h-60 overflow-auto" onScroll={handleScroll}>
+                  <div className="max-h-60 overflow-auto" onScroll={handleScroll} role="listbox">
                     {filteredArticles.length > 0 ? (
                       <>
                         {filteredArticles.map(article => (
@@ -238,9 +325,7 @@ export default function MouvementsTab() {
                             key={article.id}
                             type="button"
                             onClick={() => handleSelectArticle(article)}
-                            className={`w-full px-4 py-3 text-left hover:bg-blue-50 border-b border-slate-100 transition-colors ${
-                              selectedArticle?.id === article.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : ''
-                            }`}
+                            className="w-full border-b border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50"
                           >
                             <div className="font-medium text-sm text-slate-900">
                               {article.code} - {article.designation}
@@ -308,7 +393,7 @@ export default function MouvementsTab() {
               <label className="block text-sm font-medium mb-2">Type de mouvement *</label>
               <select
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                onChange={handleTypeChange}
                 className="w-full rounded border px-3 py-2"
                 required
               >
@@ -316,6 +401,17 @@ export default function MouvementsTab() {
                 <option value="SORTIE">⬇️ Sortie (Utilisation)</option>
                 <option value="AJUSTEMENT">⚙️ Ajustement (Correction)</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Date du mouvement *</label>
+              <input
+                type="date"
+                value={formData.date_mouvement}
+                onChange={handleDateChange}
+                className="w-full rounded border px-3 py-2"
+                required
+              />
             </div>
           </div>
 
@@ -327,7 +423,7 @@ export default function MouvementsTab() {
                 min="0.01"
                 step="0.01"
                 value={formData.quantite}
-                onChange={(e) => setFormData({ ...formData, quantite: parseFloat(e.target.value) || 0 })}
+                onChange={handleQuantiteChange}
                 className="w-full rounded border px-3 py-2"
                 required
               />
@@ -348,7 +444,7 @@ export default function MouvementsTab() {
               <input
                 type="text"
                 value={formData.reference}
-                onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+                onChange={handleReferenceChange}
                 placeholder="Ex: Demande service pédagogique"
                 className="w-full rounded border px-3 py-2"
               />
@@ -359,7 +455,7 @@ export default function MouvementsTab() {
             <label className="block text-sm font-medium mb-2">Motif</label>
             <textarea
               value={formData.motif}
-              onChange={(e) => setFormData({ ...formData, motif: e.target.value })}
+              onChange={handleMotifChange}
               placeholder="Ex: Distribution fournitures classe de 6ème A"
               rows="2"
               className="w-full rounded border px-3 py-2"
@@ -371,12 +467,17 @@ export default function MouvementsTab() {
               {error}
             </div>
           )}
+          {success && (
+            <div className="rounded bg-green-100 px-4 py-3 text-sm text-green-700">
+              {success}
+            </div>
+          )}
 
           <div className="flex justify-end">
             <button
               type="submit"
-              disabled={loading}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+              disabled={loading || !selectedArticle}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <PlusIcon className="h-5 w-5" />
               {loading ? 'Enregistrement...' : 'Enregistrer le mouvement'}

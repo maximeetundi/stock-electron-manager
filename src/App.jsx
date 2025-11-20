@@ -10,6 +10,7 @@ import SettingsPage from '@/pages/SettingsPage.jsx';
 import BackupPage from '@/pages/BackupPage.jsx';
 import AboutPage from '@/pages/AboutPage.jsx';
 import StockPage from '@/pages/StockPage.jsx';
+import MouvementsPage from '@/pages/MouvementsPage.jsx';
 import BonsCommandePage from '@/pages/BonsCommandePage.jsx';
 import StockReportsPage from '@/pages/StockReportsPage.jsx';
 import AppLayout from '@/components/layout/AppLayout.jsx';
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="statistiques" element={<StatisticsPage />} />
         <Route path="rapports" element={<ReportsPage />} />
         <Route path="stock" element={<StockPage />} />
+        <Route path="mouvements" element={<MouvementsPage />} />
         <Route path="bons-commande" element={<BonsCommandePage />} />
         <Route path="rapports-stock" element={<StockReportsPage />} />
         <Route path="sauvegarde" element={<BackupPage />} />

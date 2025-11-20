@@ -9,13 +9,15 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon,
   ChevronLeftIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
+  PrinterIcon
 } from '@heroicons/react/24/outline';
 import { PERIOD_OPTIONS } from '@/utils/apiClient';
 import Card from '@/components/ui/Card';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { generateEtatStockPrintHtml, generateBonsCommandePrintHtml, generateMouvementsPrintHtml } from '@/utils/printReports';
 
 const PERIOD_CHOICES = [
   { key: 'all', label: 'Toutes les périodes' },
@@ -43,6 +45,11 @@ export default function StockReportsPage() {
   const [alertSearchTerm, setAlertSearchTerm] = useState('');
   const [alertCurrentPage, setAlertCurrentPage] = useState(1);
   const ALERT_ITEMS_PER_PAGE = 15;
+
+  // États pour l'aperçu avant impression
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [printPreviewHtml, setPrintPreviewHtml] = useState('');
+  const [printPreviewTitle, setPrintPreviewTitle] = useState('');
 
   const [stats, setStats] = useState({
     totalArticles: 0,
@@ -462,6 +469,38 @@ export default function StockReportsPage() {
     XLSX.writeFile(wb, `mouvements-stock-${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // Fonctions pour l'impression avec aperçu
+  const handlePrintEtatStock = () => {
+    const html = generateEtatStockPrintHtml(articles, stats);
+    setPrintPreviewHtml(html);
+    setPrintPreviewTitle('État des Stocks');
+    setShowPrintPreview(true);
+  };
+
+  const handlePrintBonsCommande = () => {
+    const filtered = getFilteredBons();
+    const html = generateBonsCommandePrintHtml(filtered, stats, filters, selectedPeriod, PERIOD_CHOICES);
+    setPrintPreviewHtml(html);
+    setPrintPreviewTitle('Rapport Bons de Commande');
+    setShowPrintPreview(true);
+  };
+
+  const handlePrintMouvements = () => {
+    const filtered = getFilteredMouvements();
+    const html = generateMouvementsPrintHtml(filtered, filters, selectedPeriod, PERIOD_CHOICES);
+    setPrintPreviewHtml(html);
+    setPrintPreviewTitle('Mouvements de Stock');
+    setShowPrintPreview(true);
+  };
+
+  const handleConfirmPrint = () => {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(printPreviewHtml);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 250);
+    setShowPrintPreview(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Statistiques */}
@@ -782,6 +821,13 @@ export default function StockReportsPage() {
               Exporter PDF
             </button>
             <button
+              onClick={handlePrintEtatStock}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <PrinterIcon className="h-5 w-5" />
+              Imprimer
+            </button>
+            <button
               onClick={exportEtatStockExcel}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
             >
@@ -806,6 +852,13 @@ export default function StockReportsPage() {
               Exporter PDF
             </button>
             <button
+              onClick={handlePrintBonsCommande}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <PrinterIcon className="h-5 w-5" />
+              Imprimer
+            </button>
+            <button
               onClick={exportBonsCommandeExcel}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
             >
@@ -828,6 +881,13 @@ export default function StockReportsPage() {
             >
               <DocumentArrowDownIcon className="h-5 w-5" />
               Exporter PDF
+            </button>
+            <button
+              onClick={handlePrintMouvements}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <PrinterIcon className="h-5 w-5" />
+              Imprimer
             </button>
             <button
               onClick={exportMouvementsExcel}
@@ -1008,6 +1068,46 @@ export default function StockReportsPage() {
           );
         })()}
       </Card>
+
+      {/* Modal aperçu avant impression */}
+      {showPrintPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-xl overflow-hidden flex flex-col">
+            {/* En-tête du modal */}
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <h2 className="text-lg font-semibold">{printPreviewTitle} - Aperçu avant impression</h2>
+              <button
+                onClick={() => setShowPrintPreview(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Contenu du document */}
+            <div className="flex-1 overflow-auto bg-slate-50 p-6">
+              <div className="bg-white rounded shadow-sm p-8" dangerouslySetInnerHTML={{ __html: printPreviewHtml.replace(/<html>|<\/html>|<head>.*?<\/head>|<!DOCTYPE html>/gi, '') }} />
+            </div>
+
+            {/* Boutons d'action */}
+            <div className="border-t px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowPrintPreview(false)}
+                className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleConfirmPrint}
+                className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+              >
+                <PrinterIcon className="h-4 w-4" />
+                Imprimer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
