@@ -803,7 +803,7 @@ Unitaire`,"TOTAL"]],body:Ct,theme:"grid",styles:{fontSize:9,cellPadding:3,halign
       <div class="container">
         <div class="header">
           <h1>ÉTAT DES STOCKS</h1>
-          <p>Document généré le ${new Date().toLocaleString("fr-FR")}</p>
+          <p>Document généré le ${new Date().toLocaleDateString("fr-FR")}</p>
         </div>
 
         <div class="info-section">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppMode } from '@/state/AppModeContext';
 import {
   PlusIcon,
@@ -13,17 +13,14 @@ import {
 export default function FloatingActionButton() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { appMode } = useAppMode();
-  
-  // Ne montrer le bouton que en mode stock ou all
-  if (appMode !== 'stock' && appMode !== 'all') {
-    return null;
-  }
-  
-  // Fermer le menu quand on navigue
-  React.useEffect(() => {
+  const showFab = appMode === 'stock' || appMode === 'all';
+
+  // Fermer le menu quand on navigue ou quand le FAB doit disparaître
+  useEffect(() => {
     setIsOpen(false);
-  }, []);
+  }, [location.pathname, location.search, showFab]);
 
   const handleAction = (path) => {
     navigate(path);
@@ -60,6 +57,10 @@ export default function FloatingActionButton() {
       path: '/stock'
     }
   ];
+
+  if (!showFab) {
+    return null;
+  }
 
   return (
     <>

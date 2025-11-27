@@ -9,10 +9,11 @@ import './index.css';
 // In packaged Electron, the app runs with file:// protocol. BrowserRouter will try to resolve
 // "/login" as file://c:/login (ERR_FILE_NOT_FOUND). Use HashRouter in that case.
 const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter;
+const routerFuture = { v7_relativeSplatPath: true };
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Router>
+    <Router future={routerFuture}>
       <AuthProvider>
         <AppModeProvider>
           <App />

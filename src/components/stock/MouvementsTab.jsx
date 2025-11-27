@@ -9,6 +9,14 @@ import {
 } from '@heroicons/react/24/outline';
 import Card from '@/components/ui/Card';
 
+const toInputDate = (value) => {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString().split('T')[0];
+  }
+  return date.toISOString().split('T')[0];
+};
+
 export default function MouvementsTab() {
   const [articles, setArticles] = useState([]);
   const [mouvements, setMouvements] = useState([]);
@@ -27,15 +35,16 @@ export default function MouvementsTab() {
   
   // Ref pour l'input de recherche
   const searchInputRef = useRef(null);
+  const [pendingTemplate, setPendingTemplate] = useState(null);
 
   const [formData, setFormData] = useState({
     article_id: '',
     type: 'SORTIE',
-    quantite: 1,
+    quantite: '',
     reference: '',
     motif: '',
     unite_saisie: '',
-    date_mouvement: new Date().toISOString().split('T')[0]
+    date_mouvement: toInputDate()
   });
 
   const loadArticles = useCallback(async () => {
@@ -50,7 +59,20 @@ export default function MouvementsTab() {
   const loadMouvements = useCallback(async () => {
     try {
       const result = await window.api.mouvements.list(null, 50);
-      if (result.ok) setMouvements(result.data);
+      if (result.ok) {
+        setMouvements(result.data);
+        if (result.data?.length) {
+          const lastMvt = result.data[0];
+          setPendingTemplate({
+            article_id: lastMvt.article_id || '',
+            type: lastMvt.type || 'SORTIE',
+            reference: lastMvt.reference || '',
+            motif: lastMvt.motif || '',
+            unite_saisie: lastMvt.unite_saisie || '',
+            date_mouvement: toInputDate(lastMvt.date_mouvement)
+          });
+        }
+      }
     } catch (err) {
       console.error('Erreur chargement mouvements', err);
     }
@@ -63,6 +85,33 @@ export default function MouvementsTab() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+useEffect(() => {
+  if (!pendingTemplate) return;
+  const article =
+    pendingTemplate.article_id && articles.length
+      ? articles.find((a) => a.id === Number(pendingTemplate.article_id))
+      : null;
+  if (pendingTemplate.article_id && !article && !articles.length) {
+    return;
+  }
+  const fallbackUnit =
+    pendingTemplate.unite_saisie || article?.unite || article?.unite_conditionnement || '';
+
+  setSelectedArticle(article || null);
+  setFormData({
+    article_id: article ? article.id : '',
+    type: pendingTemplate.type || 'SORTIE',
+    quantite: '',
+    reference: pendingTemplate.reference || '',
+    motif: pendingTemplate.motif || '',
+    unite_saisie: fallbackUnit,
+    date_mouvement: pendingTemplate.date_mouvement || toInputDate()
+  });
+  setPendingTemplate(null);
+  setSearchTerm('');
+  setShowDropdown(false);
+}, [pendingTemplate, articles]);
 
   useLayoutEffect(() => {
     if (showDropdown) {
@@ -130,10 +179,37 @@ export default function MouvementsTab() {
     setDisplayedCount(ITEMS_PER_PAGE);
   }, [searchTerm]);
 
+  const unitOptions = useMemo(() => {
+    if (!selectedArticle) return [];
+    const options = [];
+    const baseUnit = selectedArticle.unite?.trim();
+    const secondaryUnit = selectedArticle.unite_conditionnement?.trim();
+    if (baseUnit) {
+      options.push({
+        value: baseUnit,
+        label: baseUnit,
+        helper: 'Unité principale'
+      });
+    }
+    if (secondaryUnit) {
+      options.push({
+        value: secondaryUnit,
+        label: secondaryUnit,
+        helper: 'Unité secondaire'
+      });
+    }
+    return options;
+  }, [selectedArticle]);
+
+  const handleUnitSelection = useCallback((unit) => {
+    setFormData(prev => ({ ...prev, unite_saisie: unit }));
+  }, []);
+
   // Sélectionner un article
   const handleSelectArticle = useCallback((article) => {
     setSelectedArticle(article);
-    setFormData(prev => ({ ...prev, article_id: article.id, unite_saisie: article.unite || '' }));
+    const defaultUnit = article.unite || article.unite_conditionnement || '';
+    setFormData(prev => ({ ...prev, article_id: article.id, unite_saisie: defaultUnit }));
     setSearchTerm(''); // Réinitialiser la recherche
     setShowDropdown(false);
   }, []);
@@ -172,7 +248,11 @@ export default function MouvementsTab() {
 
   // Handlers optimisés pour chaque champ
   const handleQuantiteChange = useCallback((e) => {
-    setFormData(prev => ({ ...prev, quantite: parseFloat(e.target.value) || 0 }));
+    const { value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      quantite: value === '' ? '' : parseFloat(value) || 0
+    }));
   }, []);
 
   const handleTypeChange = useCallback((e) => {
@@ -199,8 +279,17 @@ export default function MouvementsTab() {
       return;
     }
     
-    if (formData.quantite <= 0) {
+    const quantiteValue =
+      formData.quantite === '' ? NaN : Number(formData.quantite);
+    if (!Number.isFinite(quantiteValue) || quantiteValue <= 0) {
       setError('Veuillez indiquer une quantité valide');
+      return;
+    }
+
+    const fallbackUnit = selectedArticle.unite || selectedArticle.unite_conditionnement || '';
+    const uniteSaisie = formData.unite_saisie || fallbackUnit;
+    if (!uniteSaisie) {
+      setError('Veuillez choisir une unité');
       return;
     }
 
@@ -208,32 +297,26 @@ export default function MouvementsTab() {
     setError(null);
 
     try {
-      const result = await window.api.mouvements.add(formData);
+      const payload = {
+        ...formData,
+        quantite: quantiteValue,
+        unite_saisie: uniteSaisie,
+        date_mouvement: formData.date_mouvement || toInputDate()
+      };
+      const result = await window.api.mouvements.add(payload);
       if (result.ok) {
         setSuccess('Mouvement enregistré avec succès');
         setTimeout(() => setSuccess(''), 2000);
-        // Réinitialiser le formulaire
-        setFormData({
-          article_id: '',
-          type: 'SORTIE',
-          quantite: 1,
-          reference: '',
-          motif: '',
-          unite_saisie: '',
-          date_mouvement: new Date().toISOString().split('T')[0]
+        setPendingTemplate({
+          article_id: payload.article_id,
+          type: payload.type,
+          reference: payload.reference || '',
+          motif: payload.motif || '',
+          unite_saisie: payload.unite_saisie || '',
+          date_mouvement: payload.date_mouvement
         });
-        setSelectedArticle(null);
-        setSearchTerm('');
         setDisplayedCount(ITEMS_PER_PAGE);
-        setShowDropdown(true);
-        setTimeout(() => {
-          if (searchInputRef.current) {
-            try {
-              searchInputRef.current.focus({ preventScroll: true });
-              searchInputRef.current.select();
-            } catch (_) {}
-          }
-        }, 0);
+        setSearchTerm('');
         setLoading(false);
         setError(null);
         // Recharger les mouvements de manière asynchrone sans bloquer
@@ -377,6 +460,11 @@ export default function MouvementsTab() {
                     <div className="text-blue-700 text-xs mt-1">
                       Prix unitaire: {selectedArticle.prix_unitaire.toLocaleString('fr-FR')} FCFA
                     </div>
+                    {selectedArticle.unite_conditionnement && selectedArticle.qte_par_conditionnement > 0 && (
+                      <div className="text-blue-700 text-xs mt-1">
+                        1 {selectedArticle.unite} = {selectedArticle.qte_par_conditionnement} {selectedArticle.unite_conditionnement}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -415,28 +503,64 @@ export default function MouvementsTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <label className="block text-sm font-medium mb-2">Quantité *</label>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={formData.quantite}
-                onChange={handleQuantiteChange}
-                className="w-full rounded border px-3 py-2"
-                required
-              />
-            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium mb-2">Quantité *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={formData.quantite}
+                  onChange={handleQuantiteChange}
+                  className="w-full rounded border px-3 py-2"
+                  required
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">Unité de saisie</label>
-              <input
-                type="text"
-                value={formData.unite_saisie}
-                disabled
-                className="w-full rounded border px-3 py-2 bg-slate-100 text-slate-600"
-              />
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-2">Unité de saisie</label>
+                {selectedArticle && unitOptions.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-3">
+                      {unitOptions.map((option) => {
+                        const isActive = formData.unite_saisie === option.value;
+                        return (
+                          <label
+                            key={option.value}
+                            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer ${
+                              isActive ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-700'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              className="sr-only"
+                              name="unite_saisie"
+                              value={option.value}
+                              checked={isActive}
+                              onChange={() => handleUnitSelection(option.value)}
+                            />
+                            <span className="font-semibold">{option.label}</span>
+                            <span className="text-xs text-slate-500">{option.helper}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {selectedArticle.unite_conditionnement && selectedArticle.qte_par_conditionnement > 0 && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        1 {selectedArticle.unite} = {selectedArticle.qte_par_conditionnement} {selectedArticle.unite_conditionnement}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <input
+                    type="text"
+                    value=""
+                    disabled
+                    placeholder="Sélectionnez d'abord un article"
+                    className="w-full rounded border px-3 py-2 bg-slate-100 text-slate-500"
+                  />
+                )}
+              </div>
             </div>
 
             <div>
@@ -449,7 +573,6 @@ export default function MouvementsTab() {
                 className="w-full rounded border px-3 py-2"
               />
             </div>
-          </div>
 
           <div>
             <label className="block text-sm font-medium mb-2">Motif</label>

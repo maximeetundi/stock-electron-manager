@@ -29,6 +29,41 @@ const DEFAULT_USER = {
   password: 'Caissiere@2024'
 };
 
+const DEFAULT_DOC_HEADER_LEFT = [
+  'RÉPUBLIQUE DU CAMEROUN',
+  'Paix-Travail-Patrie',
+  '************',
+  "MINISTÈRE DE L'ÉDUCATION DE BASE",
+  '************',
+  'DÉLÉGATION RÉGIONALE DU CENTRE',
+  '************',
+  'DÉLÉGATION DÉPARTEMENTALE DE LA MEFOU ET AFAMBA',
+  '************',
+  "INSPECTION D'ARRONDISSEMENT DE MFOU"
+].join('\n');
+
+const DEFAULT_DOC_HEADER_RIGHT = [
+  'REPUBLIC OF CAMEROON',
+  'Peace-Work-Fatherland',
+  '************',
+  'MINISTRY OF BASIC EDUCATION',
+  '************',
+  'REGIONAL DELEGATION OF CENTRE',
+  '************',
+  'DIVISIONAL DELEGATION OF MEFOU-AFAMBA',
+  '************',
+  'SUB DIVISIONAL INSPECTION OF MFOU'
+].join('\n');
+
+const DEFAULT_DOC_HEADER_CENTER_TITLE = 'COMPLEXE SCOLAIRE SAINT-MICHEL ARCHANGE DE MINKAN';
+const DEFAULT_DOC_HEADER_CENTER_SUBTITLE = 'BP. 10247 Yaoundé • Tél. : 242 04 15 16';
+
+const DEFAULT_DOC_FOOTER_SIGNERS = JSON.stringify([
+  { slot: 'left', label: 'Directeur Administratif et Financier', name: '' },
+  { slot: 'center', label: 'Responsable Logistique', name: '' },
+  { slot: 'right', label: 'Comptable', name: '' }
+]);
+
 function ensureDirectoryExists(filePath) {
   const dir = path.dirname(filePath);
   if (!fs.existsSync(dir)) {
@@ -120,6 +155,7 @@ function initializeSchema(db) {
       date_heure TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       libelle TEXT,
       lieu TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (categorie_id) REFERENCES categories(id) ON DELETE CASCADE ON UPDATE CASCADE
     )
   `).run();
@@ -143,6 +179,10 @@ function initializeSchema(db) {
   const hasLieuColumn = transactionColumns.some((column) => column.name === 'lieu');
   if (!hasLieuColumn) {
     db.prepare('ALTER TABLE transactions ADD COLUMN lieu TEXT').run();
+  }
+  const hasTransactionCreatedAt = transactionColumns.some((column) => column.name === 'created_at');
+  if (!hasTransactionCreatedAt) {
+    db.prepare('ALTER TABLE transactions ADD COLUMN created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP').run();
   }
 
   // Tables pour la gestion de stock (version 1.2)
@@ -175,13 +215,13 @@ function initializeSchema(db) {
     CREATE TABLE IF NOT EXISTS bons_commande (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       numero TEXT NOT NULL UNIQUE,
-      fournisseur_id INTEGER NOT NULL,
+      fournisseur_id INTEGER,
       date_commande TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       statut TEXT NOT NULL DEFAULT 'EN_COURS' CHECK (statut IN ('EN_COURS', 'LIVREE', 'ANNULEE')),
       montant_total REAL NOT NULL DEFAULT 0,
       observations TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (fournisseur_id) REFERENCES fournisseurs(id) ON DELETE RESTRICT ON UPDATE CASCADE
+      FOREIGN KEY (fournisseur_id) REFERENCES fournisseurs(id) ON DELETE SET NULL ON UPDATE CASCADE
     )
   `).run();
 
@@ -218,6 +258,43 @@ function initializeSchema(db) {
   try {
     db.prepare(`ALTER TABLE bons_commande_items ADD COLUMN affecte_stock INTEGER NOT NULL DEFAULT 1`).run();
   } catch (e) { /* Colonne existe déjà */ }
+
+  // Migration: rendre fournisseur_id optionnel dans bons_commande
+  try {
+    const columns = db.prepare(`PRAGMA table_info(bons_commande)`).all();
+    const fournisseurColumn = columns.find((col) => col.name === 'fournisseur_id');
+
+    if (fournisseurColumn && fournisseurColumn.notnull === 1) {
+      const migrateNullableFournisseur = db.transaction(() => {
+        db.prepare(`
+          CREATE TABLE IF NOT EXISTS bons_commande__tmp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT NOT NULL UNIQUE,
+            fournisseur_id INTEGER,
+            date_commande TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            statut TEXT NOT NULL DEFAULT 'EN_COURS' CHECK (statut IN ('EN_COURS', 'LIVREE', 'ANNULEE')),
+            montant_total REAL NOT NULL DEFAULT 0,
+            observations TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (fournisseur_id) REFERENCES fournisseurs(id) ON DELETE SET NULL ON UPDATE CASCADE
+          )
+        `).run();
+
+        db.prepare(`
+          INSERT INTO bons_commande__tmp (id, numero, fournisseur_id, date_commande, statut, montant_total, observations, created_at)
+          SELECT id, numero, fournisseur_id, date_commande, statut, montant_total, observations, created_at
+          FROM bons_commande
+        `).run();
+
+        db.prepare(`DROP TABLE bons_commande`).run();
+        db.prepare(`ALTER TABLE bons_commande__tmp RENAME TO bons_commande`).run();
+      });
+
+      migrateNullableFournisseur();
+    }
+  } catch (err) {
+    console.error('Migration bons_commande nullable échouée:', err);
+  }
 
   // Migration: articles - unités de conditionnement
   try {
@@ -346,6 +423,7 @@ function mapTransaction(row) {
     montant: Number(row.montant),
     type: row.type,
     dateHeure: row.date_heure,
+    createdAt: row.created_at,
     libelle: row.libelle || null,
     lieu: row.lieu || null
   };
@@ -382,10 +460,10 @@ function createDatabaseService(app) {
        ORDER BY t.date_heure DESC`
     ),
     recentTransactions: db.prepare(
-      `SELECT t.id, t.categorie_id, t.montant, t.type, t.date_heure, t.libelle, t.lieu, c.nom AS categorie
+      `SELECT t.id, t.categorie_id, t.montant, t.type, t.date_heure, t.libelle, t.lieu, t.created_at, c.nom AS categorie
        FROM transactions t
        INNER JOIN categories c ON c.id = t.categorie_id
-       ORDER BY t.date_heure DESC
+       ORDER BY t.created_at DESC
        LIMIT @limit`
     ),
     listTransactionsAsc: db.prepare(
@@ -435,10 +513,10 @@ function createDatabaseService(app) {
          ORDER BY t.date_heure DESC`
       ),
       recentTransactions: db.prepare(
-        `SELECT t.id, t.categorie_id, t.montant, t.type, t.date_heure, t.libelle, t.lieu, c.nom AS categorie
+        `SELECT t.id, t.categorie_id, t.montant, t.type, t.date_heure, t.libelle, t.lieu, t.created_at, c.nom AS categorie
          FROM transactions t
          INNER JOIN categories c ON c.id = t.categorie_id
-         ORDER BY t.date_heure DESC
+         ORDER BY t.created_at DESC
          LIMIT @limit`
       ),
       listTransactionsAsc: db.prepare(
@@ -836,6 +914,12 @@ function createDatabaseService(app) {
     // defaults
     if (!('org_name' in map)) map.org_name = 'Ecole Finances';
     if (!('org_logo_path' in map)) map.org_logo_path = '';
+    if (!('doc_header_left' in map)) map.doc_header_left = DEFAULT_DOC_HEADER_LEFT;
+    if (!('doc_header_right' in map)) map.doc_header_right = DEFAULT_DOC_HEADER_RIGHT;
+    if (!('doc_header_center_title' in map)) map.doc_header_center_title = DEFAULT_DOC_HEADER_CENTER_TITLE;
+    if (!('doc_header_center_subtitle' in map)) map.doc_header_center_subtitle = DEFAULT_DOC_HEADER_CENTER_SUBTITLE;
+    if (!('doc_header_emblem_path' in map)) map.doc_header_emblem_path = '';
+    if (!('doc_footer_signers' in map)) map.doc_footer_signers = DEFAULT_DOC_FOOTER_SIGNERS;
     return map;
   }
 
@@ -1179,7 +1263,7 @@ function createDatabaseService(app) {
     return db.prepare(
       `SELECT bc.*, f.nom as fournisseur_nom
        FROM bons_commande bc
-       INNER JOIN fournisseurs f ON f.id = bc.fournisseur_id
+       LEFT JOIN fournisseurs f ON f.id = bc.fournisseur_id
        ORDER BY bc.date_commande DESC`
     ).all();
   }
@@ -1189,7 +1273,7 @@ function createDatabaseService(app) {
       `SELECT bc.*, f.nom as fournisseur_nom, f.adresse as fournisseur_adresse, 
               f.telephone as fournisseur_telephone, f.email as fournisseur_email
        FROM bons_commande bc
-       INNER JOIN fournisseurs f ON f.id = bc.fournisseur_id
+       LEFT JOIN fournisseurs f ON f.id = bc.fournisseur_id
        WHERE bc.id = ?`
     ).get(id);
     
@@ -1209,11 +1293,11 @@ function createDatabaseService(app) {
   }
 
   function createBonCommande({ fournisseur_id, date_commande, observations, items }) {
-    if (!fournisseur_id) throw new Error('Le fournisseur est requis');
     if (!items || !items.length) throw new Error('Le bon de commande doit contenir au moins une ligne');
 
     const numero = generateNumeroBC();
     const montant_total = items.reduce((sum, item) => sum + (item.quantite * item.prix_unitaire), 0);
+    const fournisseurValue = fournisseur_id || null;
 
     const transaction = db.transaction(() => {
       const bcInfo = db.prepare(
@@ -1221,7 +1305,7 @@ function createDatabaseService(app) {
          VALUES (?, ?, ?, ?, ?)`
       ).run(
         numero,
-        fournisseur_id,
+        fournisseurValue,
         date_commande || new Date().toISOString(),
         montant_total,
         observations?.trim() || null

@@ -10,7 +10,8 @@ import {
   DocumentArrowDownIcon,
   TableCellsIcon,
   AdjustmentsHorizontalIcon,
-  CalendarIcon
+  CalendarIcon,
+  PrinterIcon
 } from '@heroicons/react/24/outline';
 
 export default function FiltersPanel({
@@ -25,6 +26,7 @@ export default function FiltersPanel({
   categoryLabel,
   onExportPdf,
   onExportExcel,
+  onPrint,
   exportDisabled,
   exporting,
   searchQuery = '',
@@ -119,6 +121,15 @@ export default function FiltersPanel({
           <button
             type="button"
             disabled={exportDisabled}
+            onClick={onPrint}
+            className="flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-600/60"
+          >
+            <PrinterIcon className="h-5 w-5" />
+            Imprimer
+          </button>
+          <button
+            type="button"
+            disabled={exportDisabled}
             onClick={onExportPdf}
             className="flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-slate-900/30 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-700/60 dark:bg-primary-500 dark:hover:bg-primary-400"
           >
@@ -163,6 +174,7 @@ FiltersPanel.propTypes = {
   categoryLabel: PropTypes.string.isRequired,
   onExportPdf: PropTypes.func.isRequired,
   onExportExcel: PropTypes.func.isRequired,
+  onPrint: PropTypes.func,
   exportDisabled: PropTypes.bool.isRequired,
   exporting: PropTypes.bool.isRequired,
   searchQuery: PropTypes.string,

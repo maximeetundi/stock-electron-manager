@@ -1,4 +1,7 @@
-export const generateEtatStockPrintHtml = (articles, stats) => {
+import { getPrintBrandingBlocks } from '@/utils/documentBranding';
+
+export const generateEtatStockPrintHtml = (articles, stats, branding) => {
+  const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
   const tableRows = articles.map(a => `
     <tr>
       <td style="padding: 8px; border: 1px solid #e2e8f0;">${a.code}</td>
@@ -23,6 +26,7 @@ export const generateEtatStockPrintHtml = (articles, stats) => {
       <meta charset="UTF-8">
       <title>État des Stocks</title>
       <style>
+        ${brandingStyles}
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
         .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
         .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
@@ -40,10 +44,10 @@ export const generateEtatStockPrintHtml = (articles, stats) => {
         .stat-item { background-color: white; padding: 15px; border-radius: 4px; border: 1px solid #e2e8f0; }
         .stat-label { font-size: 12px; color: #64748b; font-weight: bold; }
         .stat-value { font-size: 18px; font-weight: bold; color: #1e293b; margin-top: 5px; }
-        .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; }
       </style>
     </head>
     <body>
+      ${headerHtml}
       <div class="container">
         <div class="header">
           <h1>ÉTAT DES STOCKS</h1>
@@ -109,16 +113,16 @@ export const generateEtatStockPrintHtml = (articles, stats) => {
           </div>
         </div>
 
-        <div class="footer">
-          <p>Ce rapport a été généré automatiquement par le système de gestion de stock</p>
-        </div>
       </div>
+      ${footerHtml}
+      <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
     </body>
     </html>
   `;
 };
 
-export const generateBonsCommandePrintHtml = (filtered, stats, filters, selectedPeriod, PERIOD_CHOICES) => {
+export const generateBonsCommandePrintHtml = (filtered, stats, filters, selectedPeriod, PERIOD_CHOICES, branding) => {
+  const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
   const tableRows = filtered.map(b => `
     <tr>
       <td style="padding: 8px; border: 1px solid #e2e8f0;">${b.numero}</td>
@@ -158,6 +162,7 @@ export const generateBonsCommandePrintHtml = (filtered, stats, filters, selected
       <meta charset="UTF-8">
       <title>Rapport Bons de Commande</title>
       <style>
+        ${brandingStyles}
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
         .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
         .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
@@ -175,10 +180,10 @@ export const generateBonsCommandePrintHtml = (filtered, stats, filters, selected
         .stat-item { background-color: white; padding: 15px; border-radius: 4px; border: 1px solid #e2e8f0; }
         .stat-label { font-size: 12px; color: #64748b; font-weight: bold; }
         .stat-value { font-size: 18px; font-weight: bold; color: #1e293b; margin-top: 5px; }
-        .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; }
       </style>
     </head>
     <body>
+      ${headerHtml}
       <div class="container">
         <div class="header">
           <h1>RAPPORT BONS DE COMMANDE</h1>
@@ -237,16 +242,16 @@ export const generateBonsCommandePrintHtml = (filtered, stats, filters, selected
           </div>
         </div>
 
-        <div class="footer">
-          <p>Ce rapport a été généré automatiquement par le système de gestion de stock</p>
-        </div>
       </div>
+      ${footerHtml}
+      <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
     </body>
     </html>
   `;
 };
 
-export const generateMouvementsPrintHtml = (filtered, filters, selectedPeriod, PERIOD_CHOICES) => {
+export const generateMouvementsPrintHtml = (filtered, filters, selectedPeriod, PERIOD_CHOICES, branding) => {
+  const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
   const tableRows = filtered.map(m => `
     <tr>
       <td style="padding: 8px; border: 1px solid #e2e8f0;">${new Date(m.date_mouvement).toLocaleDateString('fr-FR')}</td>
@@ -297,6 +302,7 @@ export const generateMouvementsPrintHtml = (filtered, filters, selectedPeriod, P
       <meta charset="UTF-8">
       <title>Rapport Mouvements de Stock</title>
       <style>
+        ${brandingStyles}
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
         .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
         .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
@@ -314,10 +320,10 @@ export const generateMouvementsPrintHtml = (filtered, filters, selectedPeriod, P
         .stat-item { background-color: white; padding: 15px; border-radius: 4px; border: 1px solid #e2e8f0; }
         .stat-label { font-size: 12px; color: #64748b; font-weight: bold; }
         .stat-value { font-size: 18px; font-weight: bold; color: #1e293b; margin-top: 5px; }
-        .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; }
       </style>
     </head>
     <body>
+      ${headerHtml}
       <div class="container">
         <div class="header">
           <h1>MOUVEMENTS DE STOCK</h1>
@@ -378,10 +384,9 @@ export const generateMouvementsPrintHtml = (filtered, filters, selectedPeriod, P
           </div>
         </div>
 
-        <div class="footer">
-          <p>Ce rapport a été généré automatiquement par le système de gestion de stock</p>
-        </div>
       </div>
+      ${footerHtml}
+      <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
     </body>
     </html>
   `;

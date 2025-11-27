@@ -10,6 +10,7 @@ import autoTable from 'jspdf-autotable';
 import { formatCurrency, formatDate, formatTime } from '@/utils/format';
 import { DEFAULT_FILENAME } from './constants.js';
 import { formatPeriodLabel, aggregateTransactions, mapTransactionsForExport } from './utils.js';
+import { loadDocumentBranding, createPdfBranding, getPrintBrandingBlocks } from '@/utils/documentBranding';
 
 export default function ReportsPage() {
   const [filters, setFilters] = useState({
@@ -377,6 +378,7 @@ export default function ReportsPage() {
       if (!filePath) {
         return;
       }
+      const branding = await loadDocumentBranding();
       let orgName = 'Ecole Finances';
       try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
       const isEntryOnly = filters.typeFilter === 'ENTREE';
@@ -384,20 +386,25 @@ export default function ReportsPage() {
       const includeEntries = !isExitOnly;
       const includeSorties = !isEntryOnly;
       const doc = new jsPDF({ orientation: 'landscape' });
+      const pdfBranding = createPdfBranding(doc, branding);
+      pdfBranding.applyOnPage();
       const formatCurrencyPdf = (value) =>
         formatCurrency(value).replace(/\u202f|\u00a0/g, ' ').replace(/\s{2,}/g, ' ').trim();
       // Titre plus visible en PDF
+      const contentStartY = pdfBranding.contentStartY;
       doc.setFontSize(18);
-      doc.text(`Rapport financier — ${orgName}`, 14, 18);
+      doc.text(`Rapport financier`, 14, contentStartY);
       doc.setFontSize(11);
       const periodLabelText = filters.period === 'custom'
         ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
         : `Période: ${formatPeriodLabel(filters)}`;
-      doc.text(periodLabelText, 14, 26);
-      doc.text(`Filtre: ${typeLabel}`, 14, 32);
-      doc.text(categoryLabel, 14, 38);
+      doc.text(periodLabelText, 14, contentStartY + 8);
+      doc.text(`Filtre: ${typeLabel}`, 14, contentStartY + 14);
+      doc.text(categoryLabel, 14, contentStartY + 20);
       autoTable(doc, {
-        startY: 42,
+        startY: contentStartY + 26,
+        margin: { top: pdfBranding.marginTop, bottom: pdfBranding.marginBottom },
+        didDrawPage: () => pdfBranding.applyOnPage(),
         head: [['N°', 'Date', 'Heure', 'Catégorie', 'Libellé', 'Type', 'Montant']],
         body: exportTransactions.map((transaction, idx) => [
           String(idx + 1),
@@ -510,7 +517,7 @@ export default function ReportsPage() {
       const includeSorties = !isEntryOnly;
       const workbook = XLSXUtils.book_new();
       // Ajoute un titre et des informations de contexte en tête de feuille
-      const title = `Rapport financier — ${orgName}`;
+      const title = `Rapport financier`;
       const infoPeriod = filters.period === 'custom'
         ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
         : `Période : ${formatPeriodLabel(filters)}`;
@@ -604,6 +611,153 @@ export default function ReportsPage() {
     !data?.transactions?.length ||
     (filters.period === 'custom' && (!filters.startDate || !filters.endDate));
 
+  const printReport = async () => {
+    if (!exportTransactions.length) {
+      setError('Aucune transaction ne correspond à ces filtres.');
+      return;
+    }
+    try {
+      const branding = await loadDocumentBranding();
+      const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
+      let orgName = 'Ecole Finances';
+      try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
+      
+      const periodLabelText = filters.period === 'custom'
+        ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
+        : `Période: ${formatPeriodLabel(filters)}`;
+
+      const tableRows = exportTransactions.map((transaction, idx) => `
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: center;">${idx + 1}</td>
+          <td style="padding: 8px; border: 1px solid #e2e8f0;">${formatDate(transaction.dateHeure)}</td>
+          <td style="padding: 8px; border: 1px solid #e2e8f0;">${formatTime(transaction.dateHeure)}</td>
+          <td style="padding: 8px; border: 1px solid #e2e8f0;">${transaction.categorie}</td>
+          <td style="padding: 8px; border: 1px solid #e2e8f0;">${transaction.libelle || '—'}</td>
+          <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: center;">
+            <span style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; ${
+              transaction.type === 'ENTREE' ? 'background-color: #dcfce7; color: #166534;' : 'background-color: #fee2e2; color: #991b1b;'
+            }">${transaction.type === 'ENTREE' ? 'Entrée' : 'Sortie'}</span>
+          </td>
+          <td style="padding: 8px; border: 1px solid #e2e8f0; text-align: right;">${formatCurrency(transaction.montant)}</td>
+        </tr>
+      `).join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Rapport Financier</title>
+          <style>
+            ${brandingStyles}
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
+            .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
+            .header h1 { margin: 0; color: #1e293b; font-size: 28px; }
+            .header p { margin: 5px 0; color: #64748b; }
+            .info-section { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
+            .info-box { background-color: #f1f5f9; padding: 15px; border-radius: 6px; border-left: 4px solid #3b82f6; }
+            .info-box-label { font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; }
+            .info-box-value { font-size: 20px; font-weight: bold; color: #1e293b; margin-top: 5px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; border: 1px solid #e2e8f0; }
+            th { background-color: #3b82f6; color: white; padding: 12px; text-align: left; font-weight: bold; border: 1px solid #e2e8f0; }
+            td { border: 1px solid #e2e8f0; }
+            .stats { background-color: #f1f5f9; padding: 20px; border-radius: 6px; margin-top: 20px; }
+            .stats h3 { margin-top: 0; color: #1e293b; }
+            .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; }
+            .stat-item { background-color: white; padding: 15px; border-radius: 4px; border: 1px solid #e2e8f0; }
+            .stat-label { font-size: 12px; color: #64748b; font-weight: bold; }
+            .stat-value { font-size: 18px; font-weight: bold; color: #1e293b; margin-top: 5px; }
+            @media print {
+              body { margin: 0; background-color: white; }
+              .container { padding: 20px; }
+            }
+          </style>
+        </head>
+        <body>
+          ${headerHtml}
+          <div class="container">
+            <div class="header">
+              <h1>RAPPORT FINANCIER</h1>
+              <p>Document généré le ${new Date().toLocaleString('fr-FR')}</p>
+            </div>
+
+            <div class="info-section">
+              <div class="info-box">
+                <div class="info-box-label">Période</div>
+                <div class="info-box-value" style="font-size: 14px;">${periodLabelText}</div>
+              </div>
+              <div class="info-box">
+                <div class="info-box-label">Filtre</div>
+                <div class="info-box-value" style="font-size: 14px;">${typeLabel}</div>
+              </div>
+              <div class="info-box">
+                <div class="info-box-label">Catégorie</div>
+                <div class="info-box-value" style="font-size: 14px;">${categoryLabel}</div>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th style="text-align: center;">N°</th>
+                  <th>Date</th>
+                  <th>Heure</th>
+                  <th>Catégorie</th>
+                  <th>Libellé</th>
+                  <th style="text-align: center;">Type</th>
+                  <th style="text-align: right;">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tableRows}
+              </tbody>
+            </table>
+
+            <div class="stats">
+              <h3>STATISTIQUES</h3>
+              <div class="stats-grid">
+                ${exportTotals.global.entree > 0 || filters.typeFilter !== 'SORTIE' ? `
+                <div class="stat-item">
+                  <div class="stat-label">Total entrées</div>
+                  <div class="stat-value">${formatCurrency(exportTotals.global.entree)}</div>
+                </div>
+                ` : ''}
+                ${exportTotals.global.sortie > 0 || filters.typeFilter !== 'ENTREE' ? `
+                <div class="stat-item">
+                  <div class="stat-label">Total sorties</div>
+                  <div class="stat-value">${formatCurrency(exportTotals.global.sortie)}</div>
+                </div>
+                ` : ''}
+                ${filters.typeFilter === 'all' ? `
+                <div class="stat-item">
+                  <div class="stat-label">Solde</div>
+                  <div class="stat-value">${formatCurrency(exportTotals.global.balance)}</div>
+                </div>
+                ` : ''}
+                <div class="stat-item">
+                  <div class="stat-label">Nombre d'opérations</div>
+                  <div class="stat-value">${counts.totalCount}</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+          ${footerHtml}
+        </body>
+        </html>
+      `;
+
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(html);
+      printWindow.document.close();
+      setTimeout(() => printWindow.print(), 250);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Impossible de générer l\'aperçu d\'impression');
+    }
+  };
+
   return (
     <div className="space-y-8">
       <FiltersPanel
@@ -618,6 +772,7 @@ export default function ReportsPage() {
         categoryLabel={categoryLabel}
         onExportPdf={exportToPdf}
         onExportExcel={exportToExcel}
+        onPrint={printReport}
         exportDisabled={exportDisabled}
         exporting={exporting}
         searchQuery={searchQuery}

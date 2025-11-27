@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import classNames from 'classnames';
-import { formatCurrency, formatDate, formatTime } from '@/utils/format';
+import { formatCurrency, formatDate } from '@/utils/format';
 import { PencilSquareIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
 
 export default function TransactionsTable({
@@ -67,7 +67,6 @@ export default function TransactionsTable({
         <div>Catégorie</div>
         <div>Libellé</div>
         <div>Date</div>
-        <div>Heure</div>
         <div>Montant</div>
         <div className="text-right">Actions</div>
       </div>
@@ -103,7 +102,6 @@ export default function TransactionsTable({
             </div>
             <div className="text-sm text-slate-600 dark:text-slate-300">{transaction.libelle || '—'}</div>
             <div className="text-sm text-slate-600 dark:text-slate-300">{formatDate(transaction.dateHeure)}</div>
-            <div className="text-sm text-slate-600 dark:text-slate-300">{formatTime(transaction.dateHeure)}</div>
             <div className="text-right text-sm font-semibold">
               <span
                 className={classNames(

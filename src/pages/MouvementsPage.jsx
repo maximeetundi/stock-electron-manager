@@ -14,6 +14,7 @@ import {
   PlusIcon
 } from '@heroicons/react/24/outline';
 import Card from '@/components/ui/Card';
+import { loadDocumentBranding, getPrintBrandingBlocks } from '@/utils/documentBranding';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -39,6 +40,7 @@ export default function MouvementsPage() {
   // Modal aperçu avant impression
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printPreviewHtml, setPrintPreviewHtml] = useState('');
+  const [docBranding, setDocBranding] = useState(null);
 
   const loadMouvements = useCallback(async () => {
     setLoading(true);
@@ -68,6 +70,24 @@ export default function MouvementsPage() {
     loadMouvements();
     loadArticles();
   }, [loadMouvements, loadArticles]);
+
+useEffect(() => {
+  (async () => {
+    try {
+      const branding = await loadDocumentBranding();
+      setDocBranding(branding);
+    } catch (err) {
+      console.error('Erreur chargement personnalisation documents', err);
+    }
+  })();
+}, []);
+
+const ensureBranding = useCallback(async () => {
+  if (docBranding) return docBranding;
+  const branding = await loadDocumentBranding();
+  setDocBranding(branding);
+  return branding;
+}, [docBranding]);
 
   // Filtrer les mouvements (optimisé avec useMemo)
   const filteredMouvements = useMemo(() => {
@@ -163,7 +183,8 @@ export default function MouvementsPage() {
     }
   };
 
-  const generatePrintHtml = (mouvement) => {
+  const generatePrintHtml = useCallback((mouvement, branding) => {
+    const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
     const typeLabel = {
       'ENTREE': 'Entrée (Réception)',
       'SORTIE': 'Sortie (Utilisation)',
@@ -177,8 +198,10 @@ export default function MouvementsPage() {
         <meta charset="UTF-8">
         <title>Mouvement de Stock</title>
         <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          .header { text-align: center; margin-bottom: 30px; }
+          ${brandingStyles}
+          body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
+          .container { max-width: 900px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
           .header h1 { margin: 0; color: #1e293b; }
           .header p { margin: 5px 0; color: #64748b; }
           .content { max-width: 600px; margin: 0 auto; }
@@ -191,16 +214,17 @@ export default function MouvementsPage() {
           .type-entree { background-color: #dcfce7; color: #166534; }
           .type-sortie { background-color: #fee2e2; color: #991b1b; }
           .type-ajustement { background-color: #dbeafe; color: #1e40af; }
-          .footer { margin-top: 30px; text-align: center; color: #94a3b8; font-size: 12px; }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>Mouvement de Stock</h1>
-          <p>Document imprimé le ${new Date().toLocaleString('fr-FR')}</p>
-        </div>
-        
-        <div class="content">
+        ${headerHtml}
+        <div class="container">
+          <div class="header">
+            <h1>Mouvement de Stock</h1>
+            <p>Document imprimé le ${new Date().toLocaleString('fr-FR')}</p>
+          </div>
+
+          <div class="content">
           <div class="section">
             <div class="section-title">Informations du mouvement</div>
             <div class="field">
@@ -264,21 +288,97 @@ export default function MouvementsPage() {
             </div>
           </div>
           ` : ''}
+          </div>
         </div>
-
-        <div class="footer">
-          <p>Ce document a été généré automatiquement par le système de gestion de stock</p>
-        </div>
+        ${footerHtml}
+        <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
       </body>
       </html>
     `;
-  };
+  }, []);
 
-  const handlePrint = (mouvement) => {
-    const html = generatePrintHtml(mouvement);
-    setPrintPreviewHtml(html);
-    setShowPrintPreview(true);
-  };
+  const generateListPrintHtml = useCallback((list, branding) => {
+    const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Mouvements de Stock</title>
+        <style>
+          ${brandingStyles}
+          body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
+          .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
+          .header h1 { margin: 0; color: #1e293b; font-size: 28px; }
+          .header p { margin: 5px 0; color: #64748b; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+          th { background-color: #3b82f6; color: white; padding: 12px; text-align: left; font-weight: bold; }
+          td { padding: 8px; border: 1px solid #e2e8f0; }
+        </style>
+      </head>
+      <body>
+        ${headerHtml}
+        <div class="container">
+          <div class="header">
+            <h1>MOUVEMENTS DE STOCK</h1>
+            <p>Document généré le ${new Date().toLocaleString('fr-FR')}</p>
+            <p>Total: ${list.length} mouvement(s)</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Article</th>
+                <th>Type</th>
+                <th style="text-align: right;">Quantité</th>
+                <th>Référence</th>
+                <th>Motif</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list
+                .map(
+                  (m) => `
+                <tr>
+                  <td>${new Date(m.date_mouvement).toLocaleString('fr-FR')}</td>
+                  <td>${m.code} - ${m.designation}</td>
+                  <td>${m.type}</td>
+                  <td style="text-align: right;">${m.quantite} ${m.article_unite || ''}</td>
+                  <td>${m.reference || '-'}</td>
+                  <td>${m.motif || '-'}</td>
+                </tr>
+              `
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
+        ${footerHtml}
+        <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
+      </body>
+      </html>
+    `;
+  }, []);
+
+  const handlePrint = useCallback(
+    async (mouvement) => {
+      const branding = await ensureBranding();
+      const html = generatePrintHtml(mouvement, branding);
+      setPrintPreviewHtml(html);
+      setShowPrintPreview(true);
+    },
+    [ensureBranding, generatePrintHtml]
+  );
+
+  const handlePrintList = useCallback(async () => {
+    const branding = await ensureBranding();
+    const html = generateListPrintHtml(filteredMouvements, branding);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => printWindow.print(), 250);
+  }, [ensureBranding, filteredMouvements, generateListPrintHtml]);
 
   const handleConfirmPrint = () => {
     const printWindow = window.open('', '_blank');
@@ -370,68 +470,7 @@ export default function MouvementsPage() {
           <h3 className="text-lg font-semibold">Mouvements de stock</h3>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                const html = `
-                  <!DOCTYPE html>
-                  <html>
-                  <head>
-                    <meta charset="UTF-8">
-                    <title>Mouvements de Stock</title>
-                    <style>
-                      body { font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }
-                      .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 8px; }
-                      .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #3b82f6; padding-bottom: 20px; }
-                      .header h1 { margin: 0; color: #1e293b; font-size: 28px; }
-                      .header p { margin: 5px 0; color: #64748b; }
-                      table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-                      th { background-color: #3b82f6; color: white; padding: 12px; text-align: left; font-weight: bold; }
-                      td { padding: 8px; border: 1px solid #e2e8f0; }
-                      .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; }
-                    </style>
-                  </head>
-                  <body>
-                    <div class="container">
-                      <div class="header">
-                        <h1>MOUVEMENTS DE STOCK</h1>
-                        <p>Document généré le ${new Date().toLocaleString('fr-FR')}</p>
-                        <p>Total: ${filteredMouvements.length} mouvement(s)</p>
-                      </div>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>Article</th>
-                            <th>Type</th>
-                            <th style="text-align: right;">Quantité</th>
-                            <th>Référence</th>
-                            <th>Motif</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${filteredMouvements.map(m => `
-                            <tr>
-                              <td>${new Date(m.date_mouvement).toLocaleString('fr-FR')}</td>
-                              <td>${m.code} - ${m.designation}</td>
-                              <td>${m.type}</td>
-                              <td style="text-align: right;">${m.quantite} ${m.article_unite || ''}</td>
-                              <td>${m.reference || '-'}</td>
-                              <td>${m.motif || '-'}</td>
-                            </tr>
-                          `).join('')}
-                        </tbody>
-                      </table>
-                      <div class="footer">
-                        <p>Ce rapport a été généré automatiquement par le système de gestion de stock</p>
-                      </div>
-                    </div>
-                  </body>
-                  </html>
-                `;
-                const printWindow = window.open('', '_blank');
-                printWindow.document.write(html);
-                printWindow.document.close();
-                setTimeout(() => printWindow.print(), 250);
-              }}
+              onClick={handlePrintList}
               className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 transition-colors"
               title="Imprimer tous les mouvements filtrés"
             >

@@ -16,6 +16,8 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAppMode, APP_MODES } from '@/state/AppModeContext.jsx';
 
+const SIGNER_SLOTS = ['left', 'center', 'right'];
+
 export default function SettingsPage() {
   const { appMode, changeMode } = useAppMode();
   const [currentPassword, setCurrentPassword] = useState('');
@@ -38,6 +40,81 @@ export default function SettingsPage() {
   const [defaultDashboard, setDefaultDashboard] = useState('finances');
   const [dashboardFeedback, setDashboardFeedback] = useState(null);
   const [modeFeedback, setModeFeedback] = useState(null);
+  const [docHeaderLeft, setDocHeaderLeft] = useState('');
+  const [docHeaderRight, setDocHeaderRight] = useState('');
+  const [docHeaderCenterTitle, setDocHeaderCenterTitle] = useState('');
+  const [docHeaderCenterSubtitle, setDocHeaderCenterSubtitle] = useState('');
+  const [docHeaderEmblemPath, setDocHeaderEmblemPath] = useState('');
+  const [docHeaderEmblemPreview, setDocHeaderEmblemPreview] = useState('');
+  const [docFooterSigners, setDocFooterSigners] = useState([
+    { slot: 'left', label: '', name: '' },
+    { slot: 'center', label: '', name: '' },
+    { slot: 'right', label: '', name: '' }
+  ]);
+  const [documentFeedback, setDocumentFeedback] = useState(null);
+
+  const normalizeSignersState = (value) => {
+    let parsed = [];
+    if (typeof value === 'string') {
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        parsed = [];
+      }
+    } else if (Array.isArray(value)) {
+      parsed = value;
+    }
+    return SIGNER_SLOTS.map((slot, index) => ({
+      slot,
+      label: parsed[index]?.label || '',
+      name: parsed[index]?.name || ''
+    }));
+  };
+
+  const handleSignerChange = (index, field, value) => {
+    setDocFooterSigners((prev) =>
+      prev.map((signer, idx) =>
+        idx === index ? { ...signer, [field]: value } : signer
+      )
+    );
+  };
+
+  const chooseHeaderEmblem = async () => {
+    try {
+      const selected = await window.api.dialog.openFile({
+        title: 'Choisir un emblème',
+        properties: ['openFile'],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      });
+      const filePath = typeof selected === 'string' ? selected : selected?.data;
+      if (!filePath || typeof filePath !== 'string') return;
+      setDocHeaderEmblemPath(filePath);
+      try {
+        setDocHeaderEmblemPreview(await fileApi.readAsDataUrl(filePath));
+      } catch {
+        setDocHeaderEmblemPreview('');
+      }
+    } catch (error) {
+      setDocumentFeedback({ type: 'error', message: error.message || "Impossible de sélectionner l'emblème." });
+    }
+  };
+
+  const saveDocumentBranding = async () => {
+    try {
+      setDocumentFeedback(null);
+      await appApi.updateSettings({
+        doc_header_left: docHeaderLeft,
+        doc_header_right: docHeaderRight,
+        doc_header_center_title: docHeaderCenterTitle,
+        doc_header_center_subtitle: docHeaderCenterSubtitle,
+        doc_header_emblem_path: docHeaderEmblemPath || '',
+        doc_footer_signers: JSON.stringify(docFooterSigners)
+      });
+      setDocumentFeedback({ type: 'success', message: 'Personnalisation des documents enregistrée.' });
+    } catch (error) {
+      setDocumentFeedback({ type: 'error', message: error.message || 'Impossible de sauvegarder la personnalisation.' });
+    }
+  };
 
   const refreshCategories = async () => {
     try {
@@ -92,8 +169,19 @@ export default function SettingsPage() {
         setOrgName(s.org_name || '');
         setOrgLogoPath(s.org_logo_path || '');
         setDefaultDashboard(s.default_dashboard || 'finances');
+        setDocHeaderLeft(s.doc_header_left || '');
+        setDocHeaderRight(s.doc_header_right || '');
+        setDocHeaderCenterTitle(s.doc_header_center_title || '');
+        setDocHeaderCenterSubtitle(s.doc_header_center_subtitle || '');
+        setDocHeaderEmblemPath(s.doc_header_emblem_path || '');
+        setDocFooterSigners(normalizeSignersState(s.doc_footer_signers));
         if (s.org_logo_path) {
           try { setLogoPreview(await fileApi.readAsDataUrl(s.org_logo_path)); } catch {}
+        }
+        if (s.doc_header_emblem_path) {
+          try { setDocHeaderEmblemPreview(await fileApi.readAsDataUrl(s.doc_header_emblem_path)); } catch { setDocHeaderEmblemPreview(''); }
+        } else {
+          setDocHeaderEmblemPreview('');
         }
       } catch (e) {
         // silent: settings not critical to block page
@@ -311,6 +399,141 @@ export default function SettingsPage() {
               : 'border border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200'
           )}>{identityFeedback.message}</p>
         )}
+      </div>
+
+      <div className="rounded-3xl bg-white/80 p-6 shadow-xl dark:bg-slate-900/80">
+        <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+          <Cog6ToothIcon className="h-5 w-5 text-primary-500" />
+          Personnalisation des documents
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Définissez l’entête bilingue et les signataires qui apparaîtront sur les impressions et exports PDF (bons, rapports, etc.).
+        </p>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            Colonne gauche (français)
+            <textarea
+              rows={8}
+              value={docHeaderLeft}
+              onChange={(e) => setDocHeaderLeft(e.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              placeholder="Une ligne par texte (ex: République du Cameroun)"
+            />
+          </label>
+          <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            Colonne droite (anglais)
+            <textarea
+              rows={8}
+              value={docHeaderRight}
+              onChange={(e) => setDocHeaderRight(e.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              placeholder="One line per text (ex: Republic of Cameroon)"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            Titre central
+            <input
+              type="text"
+              value={docHeaderCenterTitle}
+              onChange={(e) => setDocHeaderCenterTitle(e.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              placeholder="Ex: COMPLEXE SCOLAIRE ..."
+            />
+          </label>
+          <label className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            Sous-titre / contacts
+            <input
+              type="text"
+              value={docHeaderCenterSubtitle}
+              onChange={(e) => setDocHeaderCenterSubtitle(e.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              placeholder="Ex: BP - Téléphone"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-4">
+          <div>
+            <span className="block text-sm font-medium text-slate-600 dark:text-slate-300">Emblème central</span>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+                {docHeaderEmblemPreview ? (
+                  <img src={docHeaderEmblemPreview} alt="Emblème" className="max-h-16 max-w-16 object-contain" />
+                ) : (
+                  <span className="text-xs text-slate-400">Aucun</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={chooseHeaderEmblem}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Choisir…
+              </button>
+            </div>
+            {typeof docHeaderEmblemPath === 'string' && docHeaderEmblemPath ? (
+              <p className="mt-1 max-w-xs truncate text-xs text-slate-500" title={docHeaderEmblemPath}>{docHeaderEmblemPath}</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Signataires en pied de page</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Renseignez uniquement les colonnes nécessaires. S’ils sont vides, ils n’apparaîtront pas.
+          </p>
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            {docFooterSigners.map((signer, index) => (
+              <div key={signer.slot} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                <p className="text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                  {signer.slot === 'left' ? 'Colonne gauche' : signer.slot === 'center' ? 'Colonne centrale' : 'Colonne droite'}
+                </p>
+                <label className="mt-3 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Fonction / rôle
+                  <input
+                    type="text"
+                    value={signer.label}
+                    onChange={(e) => handleSignerChange(index, 'label', e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                  />
+                </label>
+                <label className="mt-3 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Nom (optionnel)
+                  <input
+                    type="text"
+                    value={signer.name}
+                    onChange={(e) => handleSignerChange(index, 'name', e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={saveDocumentBranding}
+            className="rounded-2xl bg-primary-500 px-5 py-2 text-sm font-semibold text-white shadow shadow-primary-500/40 transition hover:bg-primary-400"
+          >
+            Enregistrer la personnalisation
+          </button>
+          {documentFeedback && (
+            <p className={classNames(
+              'rounded-2xl px-4 py-2 text-sm',
+              documentFeedback.type === 'success'
+                ? 'border border-emerald-400 bg-emerald-50 text-emerald-600 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-200'
+                : 'border border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200'
+            )}>
+              {documentFeedback.message}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Dashboard par défaut */}

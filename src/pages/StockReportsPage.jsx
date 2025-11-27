@@ -18,6 +18,7 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { generateEtatStockPrintHtml, generateBonsCommandePrintHtml, generateMouvementsPrintHtml } from '@/utils/printReports';
+import { loadDocumentBranding, createPdfBranding } from '@/utils/documentBranding';
 
 const PERIOD_CHOICES = [
   { key: 'all', label: 'Toutes les périodes' },
@@ -65,10 +66,22 @@ export default function StockReportsPage() {
     articlesEnRupture: 0,
     tauxRotation: 0
   });
+  const [docBranding, setDocBranding] = useState(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+useEffect(() => {
+  (async () => {
+    try {
+      const branding = await loadDocumentBranding();
+      setDocBranding(branding);
+    } catch (err) {
+      console.error('Erreur chargement personnalisation documents', err);
+    }
+  })();
+}, []);
 
   useEffect(() => {
     // Appliquer les dates selon la période sélectionnée
@@ -135,6 +148,13 @@ export default function StockReportsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const ensureBranding = async () => {
+    if (docBranding) return docBranding;
+    const branding = await loadDocumentBranding();
+    setDocBranding(branding);
+    return branding;
   };
 
   const calculateStats = (arts, bons, mouvs) => {
@@ -211,19 +231,27 @@ export default function StockReportsPage() {
     return filtered;
   };
 
-  const exportEtatStockPDF = () => {
+  const exportEtatStockPDF = async () => {
+    const branding = await ensureBranding();
     const doc = new jsPDF();
-    
-    doc.setFontSize(18);
-    doc.text('ETAT DES STOCKS', 105, 20, { align: 'center' });
-    
+    const pdfBranding = createPdfBranding(doc, branding);
+    pdfBranding.applyOnPage();
+
+    const centerX = doc.internal.pageSize.getWidth() / 2;
+    let cursor = pdfBranding.headerBottomY + 6;
+
+    doc.setFontSize(16);
+    doc.text('ÉTAT DES STOCKS', centerX, cursor, { align: 'center' });
     doc.setFontSize(11);
-    doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 20, 35);
-    doc.text(`Nombre d'articles: ${stats.totalArticles}`, 20, 42);
-    // Formatage sans espaces insécables
+    cursor += 10;
+    doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 20, cursor);
+    cursor += 7;
+    doc.text(`Nombre d'articles: ${stats.totalArticles}`, 20, cursor);
+    cursor += 7;
     const valeurFormatee = stats.valeurTotaleStock.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    doc.text(`Valeur totale: ${valeurFormatee} FCFA`, 20, 49);
-    doc.text(`Articles en alerte: ${stats.articlesEnAlerte}`, 20, 56);
+    doc.text(`Valeur totale: ${valeurFormatee} FCFA`, 20, cursor);
+    cursor += 7;
+    doc.text(`Articles en alerte: ${stats.articlesEnAlerte}`, 20, cursor);
 
     const tableData = articles.map(a => [
       a.code,
@@ -231,15 +259,14 @@ export default function StockReportsPage() {
       a.unite,
       a.quantite_stock,
       a.quantite_min,
-      // Formatage sans espaces insécables
       a.prix_unitaire.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' '),
       (a.quantite_stock * a.prix_unitaire).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' '),
       a.quantite_stock <= a.quantite_min ? 'ALERTE' : 'OK'
     ]);
 
     doc.autoTable({
-      startY: 65,
-      head: [['Code', 'Designation', 'Unite', 'Stock', 'Stock Min', 'P.U.', 'Valeur', 'Etat']],
+      startY: Math.max(pdfBranding.contentStartY, cursor + 10),
+      head: [['Code', 'Désignation', 'Unité', 'Stock', 'Stock Min', 'P.U.', 'Valeur', 'État']],
       body: tableData,
       theme: 'grid',
       styles: { fontSize: 8 },
@@ -250,38 +277,45 @@ export default function StockReportsPage() {
         5: { halign: 'right' },
         6: { halign: 'right' },
         7: { halign: 'center' }
-      }
+      },
+      margin: { top: pdfBranding.marginTop, bottom: pdfBranding.marginBottom },
+      didDrawPage: () => pdfBranding.applyOnPage()
     });
 
-    // Statistiques en bas
     const finalY = doc.lastAutoTable.finalY + 10;
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
     doc.text('STATISTIQUES', 20, finalY);
     doc.setFont(undefined, 'normal');
     doc.setFontSize(9);
-    
+
     const totalStock = articles.reduce((sum, a) => sum + a.quantite_stock, 0);
     const articlesEnRupture = articles.filter(a => a.quantite_stock === 0).length;
     const valeurMoyenne = stats.totalArticles > 0 ? (stats.valeurTotaleStock / stats.totalArticles).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : 0;
-    
-    doc.text(`Total quantites en stock: ${totalStock.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unites`, 20, finalY + 7);
+
+    doc.text(`Total quantités en stock: ${totalStock.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unités`, 20, finalY + 7);
     doc.text(`Articles en rupture: ${articlesEnRupture}`, 20, finalY + 14);
     doc.text(`Valeur moyenne par article: ${valeurMoyenne} FCFA`, 20, finalY + 21);
-    doc.text(`Taux d'alerte: ${((stats.articlesEnAlerte / stats.totalArticles) * 100).toFixed(1)}%`, 20, finalY + 28);
+    doc.text(`Taux d'alerte: ${stats.totalArticles ? ((stats.articlesEnAlerte / stats.totalArticles) * 100).toFixed(1) : 0}%`, 20, finalY + 28);
 
     doc.save(`etat-stock-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  const exportBonsCommandePDF = () => {
-    const doc = new jsPDF();
+  const exportBonsCommandePDF = async () => {
+    const branding = await ensureBranding();
     const filtered = getFilteredBons();
-    
-    doc.setFontSize(18);
-    doc.text('RAPPORT BONS DE COMMANDE', 105, 20, { align: 'center' });
-    
+    const doc = new jsPDF();
+    const pdfBranding = createPdfBranding(doc, branding);
+    pdfBranding.applyOnPage();
+
+    const centerX = doc.internal.pageSize.getWidth() / 2;
+    let cursor = pdfBranding.headerBottomY + 6;
+
+    doc.setFontSize(16);
+    doc.text('RAPPORT BONS DE COMMANDE', centerX, cursor, { align: 'center' });
     doc.setFontSize(11);
-    // Affichage de la période selon le filtre
+    cursor += 10;
+
     let periodeText = 'Toutes les périodes';
     if (filters.dateDebut && filters.dateFin) {
       const dateDebut = new Date(filters.dateDebut).toLocaleDateString('fr-FR');
@@ -291,24 +325,24 @@ export default function StockReportsPage() {
       const periodLabel = PERIOD_CHOICES.find(p => p.key === selectedPeriod)?.label || '';
       periodeText = periodLabel;
     }
-    doc.text(`Periode: ${periodeText}`, 20, 35);
-    doc.text(`Nombre de bons: ${filtered.length}`, 20, 42);
+    doc.text(`Période: ${periodeText}`, 20, cursor);
+    cursor += 7;
+    doc.text(`Nombre de bons: ${filtered.length}`, 20, cursor);
+    cursor += 7;
     const totalMontant = filtered.reduce((sum, b) => sum + b.montant_total, 0);
-    // Formatage du montant sans espaces insécables pour éviter les problèmes jsPDF
     const montantFormate = totalMontant.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    doc.text(`Montant total: ${montantFormate} FCFA`, 20, 49);
+    doc.text(`Montant total: ${montantFormate} FCFA`, 20, cursor);
 
     const tableData = filtered.map(b => [
       b.numero,
       new Date(b.date_commande).toLocaleDateString('fr-FR'),
       b.fournisseur_nom,
       b.statut,
-      // Formatage du montant sans espaces insécables
       b.montant_total.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
     ]);
 
     doc.autoTable({
-      startY: 60,
+      startY: Math.max(pdfBranding.contentStartY, cursor + 10),
       head: [['N° Bon', 'Date', 'Fournisseur', 'Statut', 'Montant (FCFA)']],
       body: tableData,
       theme: 'grid',
@@ -316,41 +350,48 @@ export default function StockReportsPage() {
       headStyles: { fillColor: [59, 130, 246] },
       columnStyles: {
         4: { halign: 'right' }
-      }
+      },
+      margin: { top: pdfBranding.marginTop, bottom: pdfBranding.marginBottom },
+      didDrawPage: () => pdfBranding.applyOnPage()
     });
 
-    // Statistiques en bas
     const finalY = doc.lastAutoTable.finalY + 10;
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
     doc.text('STATISTIQUES', 20, finalY);
     doc.setFont(undefined, 'normal');
     doc.setFontSize(9);
-    
+
     const bonsEnCours = filtered.filter(b => b.statut === 'EN_COURS').length;
     const bonsLivres = filtered.filter(b => b.statut === 'LIVREE').length;
     const bonsAnnules = filtered.filter(b => b.statut === 'ANNULEE').length;
     const montantEnCours = filtered.filter(b => b.statut === 'EN_COURS').reduce((sum, b) => sum + b.montant_total, 0);
     const montantLivre = filtered.filter(b => b.statut === 'LIVREE').reduce((sum, b) => sum + b.montant_total, 0);
     const montantMoyen = filtered.length > 0 ? (totalMontant / filtered.length).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : 0;
-    
+
     doc.text(`Bons en cours: ${bonsEnCours} (${montantEnCours.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} FCFA)`, 20, finalY + 7);
-    doc.text(`Bons livres: ${bonsLivres} (${montantLivre.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} FCFA)`, 20, finalY + 14);
-    doc.text(`Bons annules: ${bonsAnnules}`, 20, finalY + 21);
+    doc.text(`Bons livrés: ${bonsLivres} (${montantLivre.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} FCFA)`, 20, finalY + 14);
+    doc.text(`Bons annulés: ${bonsAnnules}`, 20, finalY + 21);
     doc.text(`Montant moyen par bon: ${montantMoyen} FCFA`, 20, finalY + 28);
 
     doc.save(`bons-commande-${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  const exportMouvementsPDF = () => {
-    const doc = new jsPDF();
+  const exportMouvementsPDF = async () => {
+    const branding = await ensureBranding();
     const filtered = getFilteredMouvements();
-    
-    doc.setFontSize(18);
-    doc.text('MOUVEMENTS DE STOCK', 105, 20, { align: 'center' });
-    
+    const doc = new jsPDF();
+    const pdfBranding = createPdfBranding(doc, branding);
+    pdfBranding.applyOnPage();
+
+    const centerX = doc.internal.pageSize.getWidth() / 2;
+    let cursor = pdfBranding.headerBottomY + 6;
+
+    doc.setFontSize(16);
+    doc.text('MOUVEMENTS DE STOCK', centerX, cursor, { align: 'center' });
     doc.setFontSize(11);
-    // Affichage de la période selon le filtre
+    cursor += 10;
+
     let periodeText = 'Toutes les périodes';
     if (filters.dateDebut && filters.dateFin) {
       const dateDebut = new Date(filters.dateDebut).toLocaleDateString('fr-FR');
@@ -360,17 +401,18 @@ export default function StockReportsPage() {
       const periodLabel = PERIOD_CHOICES.find(p => p.key === selectedPeriod)?.label || '';
       periodeText = periodLabel;
     }
-    doc.text(`Periode: ${periodeText}`, 20, 35);
-    
-    // Affichage du type de mouvement
+    doc.text(`Période: ${periodeText}`, 20, cursor);
+    cursor += 7;
+
     let typeText = 'Tous les mouvements';
     if (filters.typeMouvement === 'ENTREE') {
-      typeText = 'Entrees uniquement';
+      typeText = 'Entrées uniquement';
     } else if (filters.typeMouvement === 'SORTIE') {
       typeText = 'Sorties uniquement';
     }
-    doc.text(`Type: ${typeText}`, 20, 42);
-    doc.text(`Nombre de mouvements: ${filtered.length}`, 20, 49);
+    doc.text(`Type: ${typeText}`, 20, cursor);
+    cursor += 7;
+    doc.text(`Nombre de mouvements: ${filtered.length}`, 20, cursor);
 
     const tableData = filtered.map(m => [
       new Date(m.date_mouvement).toLocaleDateString('fr-FR'),
@@ -382,25 +424,26 @@ export default function StockReportsPage() {
     ]);
 
     doc.autoTable({
-      startY: 60,
-      head: [['Date', 'Article', 'Type', 'Quantite', 'Reference', 'Motif']],
+      startY: Math.max(pdfBranding.contentStartY, cursor + 10),
+      head: [['Date', 'Article', 'Type', 'Quantité', 'Référence', 'Motif']],
       body: tableData,
       theme: 'grid',
       styles: { fontSize: 8 },
       headStyles: { fillColor: [59, 130, 246] },
       columnStyles: {
         3: { halign: 'right' }
-      }
+      },
+      margin: { top: pdfBranding.marginTop, bottom: pdfBranding.marginBottom },
+      didDrawPage: () => pdfBranding.applyOnPage()
     });
 
-    // Statistiques en bas
     const finalY = doc.lastAutoTable.finalY + 10;
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
     doc.text('STATISTIQUES', 20, finalY);
     doc.setFont(undefined, 'normal');
     doc.setFontSize(9);
-    
+
     const entrees = filtered.filter(m => m.type === 'ENTREE');
     const sorties = filtered.filter(m => m.type === 'SORTIE');
     const totalEntrees = entrees.length;
@@ -408,11 +451,11 @@ export default function StockReportsPage() {
     const quantiteEntrees = entrees.reduce((sum, m) => sum + m.quantite, 0);
     const quantiteSorties = sorties.reduce((sum, m) => sum + m.quantite, 0);
     const quantiteMoyenne = filtered.length > 0 ? (filtered.reduce((sum, m) => sum + m.quantite, 0) / filtered.length).toFixed(1) : 0;
-    
-    doc.text(`Total entrees: ${totalEntrees} mouvements (${quantiteEntrees.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unites)`, 20, finalY + 7);
-    doc.text(`Total sorties: ${totalSorties} mouvements (${quantiteSorties.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unites)`, 20, finalY + 14);
-    doc.text(`Quantite moyenne par mouvement: ${quantiteMoyenne} unites`, 20, finalY + 21);
-    doc.text(`Balance: ${(quantiteEntrees - quantiteSorties > 0 ? '+' : '')}${(quantiteEntrees - quantiteSorties).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unites`, 20, finalY + 28);
+
+    doc.text(`Total entrées: ${totalEntrees} mouvements (${quantiteEntrees.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unités)`, 20, finalY + 7);
+    doc.text(`Total sorties: ${totalSorties} mouvements (${quantiteSorties.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unités)`, 20, finalY + 14);
+    doc.text(`Quantité moyenne par mouvement: ${quantiteMoyenne} unités`, 20, finalY + 21);
+    doc.text(`Balance: ${(quantiteEntrees - quantiteSorties > 0 ? '+' : '')}${(quantiteEntrees - quantiteSorties).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unités`, 20, finalY + 28);
 
     doc.save(`mouvements-stock-${new Date().toISOString().split('T')[0]}.pdf`);
   };
@@ -470,24 +513,27 @@ export default function StockReportsPage() {
   };
 
   // Fonctions pour l'impression avec aperçu
-  const handlePrintEtatStock = () => {
-    const html = generateEtatStockPrintHtml(articles, stats);
+  const handlePrintEtatStock = async () => {
+    const branding = await ensureBranding();
+    const html = generateEtatStockPrintHtml(articles, stats, branding);
     setPrintPreviewHtml(html);
     setPrintPreviewTitle('État des Stocks');
     setShowPrintPreview(true);
   };
 
-  const handlePrintBonsCommande = () => {
+  const handlePrintBonsCommande = async () => {
+    const branding = await ensureBranding();
     const filtered = getFilteredBons();
-    const html = generateBonsCommandePrintHtml(filtered, stats, filters, selectedPeriod, PERIOD_CHOICES);
+    const html = generateBonsCommandePrintHtml(filtered, stats, filters, selectedPeriod, PERIOD_CHOICES, branding);
     setPrintPreviewHtml(html);
     setPrintPreviewTitle('Rapport Bons de Commande');
     setShowPrintPreview(true);
   };
 
-  const handlePrintMouvements = () => {
+  const handlePrintMouvements = async () => {
+    const branding = await ensureBranding();
     const filtered = getFilteredMouvements();
-    const html = generateMouvementsPrintHtml(filtered, filters, selectedPeriod, PERIOD_CHOICES);
+    const html = generateMouvementsPrintHtml(filtered, filters, selectedPeriod, PERIOD_CHOICES, branding);
     setPrintPreviewHtml(html);
     setPrintPreviewTitle('Mouvements de Stock');
     setShowPrintPreview(true);

@@ -59,6 +59,29 @@ export default function NewTransactionPage() {
     fetchCategories();
   }, []);
 
+  useEffect(() => {
+    const loadLastTransaction = async () => {
+      try {
+        const recent = await transactionsApi.recent(1);
+        if (Array.isArray(recent) && recent.length > 0) {
+          const last = recent[0];
+          setType(last.type || 'ENTREE');
+          if (last.categorieId) {
+            setCategorieId(String(last.categorieId));
+          }
+          setLibelle(last.libelle || last.lieu || '');
+          if (last.dateHeure) {
+            setDateHeure(last.dateHeure.slice(0, 10));
+          }
+        }
+      } catch (err) {
+        // silencieux: la page reste utilisable même sans historique
+        console.error('Erreur chargement dernière opération', err);
+      }
+    };
+    loadLastTransaction();
+  }, []);
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setLoading(true);
@@ -82,18 +105,26 @@ export default function NewTransactionPage() {
       };
       const transaction = await transactionsApi.create(payload);
       setFeedback({ type: 'success', message: 'Opération ajoutée avec succès !' });
+      // Pré-remplir avec la dernière opération (sauf le montant)
       setMontant('');
-      setLibelle('');
-      setDateHeure('');
-      setHistory((prev) => [
-        {
-          ...transaction,
-          libelle: transaction.libelle ?? transaction.lieu ?? trimmedLibelle,
-          categorie: transaction.categorie ?? categoriesMap.get(transaction.categorieId) ?? ''
-        },
-        ...prev
-      ].slice(0, 5));
-      setType('ENTREE');
+      setType(transaction.type || type);
+      if (transaction.categorieId) {
+        setCategorieId(String(transaction.categorieId));
+      }
+      setLibelle(transaction.libelle ?? transaction.lieu ?? trimmedLibelle);
+      if (transaction.dateHeure) {
+        setDateHeure(transaction.dateHeure.slice(0, 10));
+      }
+      setHistory((prev) =>
+        [
+          {
+            ...transaction,
+            libelle: transaction.libelle ?? transaction.lieu ?? trimmedLibelle,
+            categorie: transaction.categorie ?? categoriesMap.get(transaction.categorieId) ?? ''
+          },
+          ...prev
+        ].slice(0, 5)
+      );
     } catch (err) {
       setFeedback({ type: 'error', message: err.message });
     } finally {
@@ -182,10 +213,10 @@ export default function NewTransactionPage() {
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-slate-600 dark:text-slate-300">
               <ClockIcon className="h-5 w-5 text-primary-500" />
-              Date & heure (optionnel)
+              Date de l’opération (optionnelle)
             </label>
             <input
-              type="datetime-local"
+              type="date"
               value={dateHeure}
               onChange={(event) => setDateHeure(event.target.value)}
               className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"

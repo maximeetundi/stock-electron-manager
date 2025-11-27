@@ -53,7 +53,9 @@ export default function StockPage() {
     unite: 'unité',
     prix_unitaire: 0,
     quantite_stock: 0,
-    quantite_min: 0
+    quantite_min: 0,
+    unite_conditionnement: '',
+    qte_par_conditionnement: 1
   });
 
   const [fournisseurFormData, setFournisseurFormData] = useState({
@@ -181,7 +183,9 @@ export default function StockPage() {
       unite: a.unite,
       prix_unitaire: a.prix_unitaire,
       quantite_stock: a.quantite_stock,
-      quantite_min: a.quantite_min
+      quantite_min: a.quantite_min,
+      unite_conditionnement: a.unite_conditionnement || '',
+      qte_par_conditionnement: a.qte_par_conditionnement || 1
     });
     setShowModal(true);
   };
@@ -204,7 +208,9 @@ export default function StockPage() {
       unite: 'unité',
       prix_unitaire: 0,
       quantite_stock: 0,
-      quantite_min: 0
+      quantite_min: 0,
+      unite_conditionnement: '',
+      qte_par_conditionnement: 1
     });
     setEditingArticle(null);
   };
@@ -353,6 +359,7 @@ export default function StockPage() {
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase">Unité</th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase">Prix (FCFA)</th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase">Stock</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase">Conversion</th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase">Actions</th>
                     </tr>
                   </thead>
@@ -369,7 +376,17 @@ export default function StockPage() {
                         <td className={`px-4 py-3 text-right text-sm font-semibold ${
                           article.quantite_stock <= article.quantite_min ? 'text-red-600' : ''
                         }`}>
-                          {formatStock(article)}
+                          <div>{formatStock(article)}</div>
+                          {article.unite_conditionnement && article.qte_par_conditionnement > 0 && (
+                            <div className="text-xs text-slate-500">
+                              ≈ {(article.quantite_stock * article.qte_par_conditionnement).toLocaleString('fr-FR')} {article.unite_conditionnement}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {article.unite_conditionnement
+                            ? `1 ${article.unite} = ${Number(article.qte_par_conditionnement || 1).toLocaleString('fr-FR')} ${article.unite_conditionnement}`
+                            : '—'}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-2">
@@ -391,7 +408,7 @@ export default function StockPage() {
                     ))
                     ) : (
                       <tr>
-                        <td colSpan="6" className="px-4 py-8 text-center text-sm text-slate-500">
+                        <td colSpan="7" className="px-4 py-8 text-center text-sm text-slate-500">
                           {articleSearchTerm ? 'Aucun article trouvé' : 'Aucun article disponible'}
                         </td>
                       </tr>
@@ -565,7 +582,7 @@ export default function StockPage() {
             </h2>
             {error && <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-600">{error}</div>}
             <form onSubmit={handleSubmitArticle} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="block text-sm font-medium">Code *</label>
                   <input
@@ -586,6 +603,36 @@ export default function StockPage() {
                     className="mt-1 w-full rounded border px-3 py-2"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium">Unité secondaire</label>
+                  <input
+                    type="text"
+                    value={formData.unite_conditionnement}
+                    onChange={(e) => setFormData({ ...formData, unite_conditionnement: e.target.value })}
+                    placeholder="Ex: Boîte, Bouteille..."
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Optionnel — l'unité utilisée dans les mouvements ou commandes.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">
+                  Équivalence (1 {formData.unite || 'unité'} = ? {formData.unite_conditionnement || 'unité secondaire'})
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={formData.qte_par_conditionnement}
+                  onChange={(e) => setFormData({ ...formData, qte_par_conditionnement: parseFloat(e.target.value) || 1 })}
+                  className="mt-1 w-full rounded border px-3 py-2"
+                  disabled={!formData.unite_conditionnement}
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Exemple : 1 carton = 50 boîtes → saisir 50.
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium">Désignation *</label>

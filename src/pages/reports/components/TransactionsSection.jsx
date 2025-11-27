@@ -7,6 +7,7 @@ import classNames from 'classnames';
 import jsPDF from 'jspdf';
 import { appApi, fileApi } from '@/utils/apiClient';
 import { formatCurrency, formatDate, formatTime } from '@/utils/format';
+import { loadDocumentBranding, createPdfBranding, getPrintBrandingBlocks } from '@/utils/documentBranding';
 
 export default function TransactionsSection({
   transactions,
@@ -39,7 +40,10 @@ export default function TransactionsSection({
 
   const exportOneToPdf = async () => {
     if (!preview) return;
+    const branding = await loadDocumentBranding();
     const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    const pdfBranding = createPdfBranding(doc, branding);
+    pdfBranding.applyOnPage();
     // Use a robust built-in font and normalize currency spacing to avoid slashes rendering
     doc.setFont('helvetica', 'normal');
 
@@ -52,37 +56,16 @@ export default function TransactionsSection({
 
     // Load organization settings
     let orgName = 'Ecole Finances';
-    let logoDataUrl = null;
     try {
       const s = await appApi.getSettings();
       if (s?.org_name) orgName = s.org_name;
-      if (s?.org_logo_path) {
-        try { logoDataUrl = await fileApi.readAsDataUrl(s.org_logo_path); } catch {}
-      }
     } catch {}
-
-    // Header with optional logo
-    doc.setFillColor(79, 70, 229); // primary
-    doc.rect(0, 0, 595, 90, 'F');
-    doc.setTextColor(255, 255, 255);
-    let titleLeft = 40;
-    if (logoDataUrl) {
-      try {
-        doc.addImage(logoDataUrl, 'PNG', 40, 26, 40, 40);
-        titleLeft = 90;
-      } catch {}
-    }
-    doc.setFontSize(20);
-    doc.text(orgName, titleLeft, 40);
-    doc.setFontSize(12);
-    doc.text(titleForPreview, titleLeft, 60);
-    doc.text(`Reçu N° ${receiptNo}`, 560, 40, { align: 'right' });
-    doc.text(`Date: ${formatDate(preview.dateHeure)} ${formatTime(preview.dateHeure)}`, 560, 60, { align: 'right' });
 
     // Body card
     doc.setTextColor(31, 41, 55); // slate-800
     const left = 40;
-    let y = 130;
+    const contentStartY = pdfBranding.contentStartY;
+    let y = contentStartY;
     const lineGap = 26;
 
     doc.setFontSize(16);
@@ -118,30 +101,22 @@ export default function TransactionsSection({
     doc.setFont(undefined, 'normal');
     y += 100;
 
-    // Footer
-    doc.setFontSize(11);
-    doc.setTextColor(100, 116, 139); // slate-500
-    doc.text('Merci de votre confiance.', left, y);
-    doc.text('Signature et cachet', 430, y);
-    doc.line(430, y + 6, 555, y + 6);
-
+    // Footer branding is handled by pdfBranding.applyOnPage() via didDrawPage
     doc.save(`recu-${stamp}-${rand}.pdf`);
   };
 
   const printOne = async () => {
     if (!preview) return;
+    const branding = await loadDocumentBranding();
+    const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
     // Local helpers (were only in exportOneToPdf before)
     const pad = (n) => String(n).padStart(2, '0');
     const d = new Date(preview.dateHeure);
     const receiptNo = `REC-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${preview.id}`;
     let orgName = 'Ecole Finances';
-    let logoDataUrl = '/logo.png';
     try {
       const s = await appApi.getSettings();
       if (s?.org_name) orgName = s.org_name;
-      if (s?.org_logo_path) {
-        try { logoDataUrl = await fileApi.readAsDataUrl(s.org_logo_path); } catch {}
-      }
     } catch {}
     const html = `<!doctype html>
       <html>
@@ -149,9 +124,10 @@ export default function TransactionsSection({
           <meta charset="utf-8" />
           <title>${titleForPreview}</title>
           <style>
+            ${brandingStyles}
             :root{--primary:#4f46e5;--slate-50:#f8fafc;--slate-200:#e2e8f0;--slate-500:#64748b;--slate-800:#1f2937}
             body{font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; padding:28px; color:var(--slate-800)}
-            .header{background:var(--primary); color:white; padding:18px 22px; border-radius:14px; display:flex; align-items:center; justify-content:space-between}
+            .header{background:var(--primary); color:white; padding:18px 22px; border-radius:14px; display:flex; align-items:center; justify-content:space-between; margin-bottom:20px}
             .left{display:flex; align-items:center; gap:12px}
             .logo{width:40px; height:40px; object-fit:contain; background:white; border-radius:8px; padding:4px}
             .title{margin:0; font-size:20px}
@@ -167,11 +143,10 @@ export default function TransactionsSection({
           </style>
         </head>
         <body>
+          ${headerHtml}
           <div class="header">
             <div class="left">
-              <img src="${logoDataUrl}" class="logo" onerror="this.style.display='none'" alt="logo" />
               <div>
-                <div class="title">${orgName}</div>
                 <div class="sub">${titleForPreview}</div>
               </div>
             </div>
@@ -188,6 +163,7 @@ export default function TransactionsSection({
             <div class="total"><div>TOTAL À PAYER</div><div class="value">${formatCurrency(preview.montant)}</div></div>
             <div class="muted"><div>Merci de votre confiance.</div><div class="sig">Signature</div></div>
           </div>
+          ${footerHtml}
           <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 300); };</script>
         </body>
       </html>`;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -16,6 +16,7 @@ import {
 import Card from '@/components/ui/Card';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { loadDocumentBranding, createPdfBranding, getPrintBrandingBlocks } from '@/utils/documentBranding';
 
 export default function BonsCommandePage() {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ export default function BonsCommandePage() {
   const [error, setError] = useState(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [printPreviewHtml, setPrintPreviewHtml] = useState('');
+  const [docBranding, setDocBranding] = useState(null);
 
   // Pagination et recherche pour bons de commande
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,8 +47,23 @@ export default function BonsCommandePage() {
   const [newItem, setNewItem] = useState({
     article_id: '',
     quantite: 1,
-    prix_unitaire: 0
+    prix_unitaire: 0,
+    unite: ''
   });
+
+  const [showQuickArticleModal, setShowQuickArticleModal] = useState(false);
+  const [quickArticleForm, setQuickArticleForm] = useState({
+    code: '',
+    designation: '',
+    unite: 'unité',
+    prix_unitaire: 0,
+    quantite_stock: 0,
+    quantite_min: 0,
+    unite_conditionnement: '',
+    qte_par_conditionnement: 1
+  });
+  const [quickArticleLoading, setQuickArticleLoading] = useState(false);
+  const [quickArticleError, setQuickArticleError] = useState(null);
 
   // États pour la recherche d'articles avec infinite scroll
   const [articleSearchTerm, setArticleSearchTerm] = useState('');
@@ -92,8 +109,32 @@ export default function BonsCommandePage() {
     loadData();
   }, [loadData]);
 
+  const ensureBranding = async () => {
+    if (docBranding) return docBranding;
+    const branding = await loadDocumentBranding();
+    setDocBranding(branding);
+    return branding;
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const branding = await loadDocumentBranding();
+        setDocBranding(branding);
+      } catch (err) {
+        console.error('Erreur chargement personnalisation documents', err);
+      }
+    })();
+  }, []);
+
   const handleAddItem = () => {
     if (!selectedArticle || newItem.quantite <= 0) return;
+    setError(null);
+    const chosenUnit = newItem.unite || selectedArticle.unite || selectedArticle.unite_conditionnement || '';
+    if (!chosenUnit) {
+      setError('Veuillez choisir une unité pour cet article.');
+      return;
+    }
 
     setFormData({
       ...formData,
@@ -103,9 +144,9 @@ export default function BonsCommandePage() {
           article_id: selectedArticle.id,
           article_code: selectedArticle.code,
           article_designation: selectedArticle.designation,
-          article_unite: selectedArticle.unite,
+          article_unite: chosenUnit,
           designation: selectedArticle.designation,
-          unite: selectedArticle.unite,
+          unite: chosenUnit,
           quantite: newItem.quantite,
           prix_unitaire: newItem.prix_unitaire || selectedArticle.prix_unitaire
         }
@@ -113,7 +154,7 @@ export default function BonsCommandePage() {
     });
 
     // Réinitialiser
-    setNewItem({ article_id: '', quantite: 1, prix_unitaire: 0 });
+    setNewItem({ article_id: '', quantite: 1, prix_unitaire: 0, unite: '' });
     setSelectedArticle(null);
     setArticleSearchTerm('');
   };
@@ -140,7 +181,11 @@ export default function BonsCommandePage() {
     setError(null);
 
     try {
-      const result = await window.api.bonsCommande.create(formData);
+      const payload = {
+        ...formData,
+        fournisseur_id: formData.fournisseur_id || null
+      };
+      const result = await window.api.bonsCommande.create(payload);
       if (result.ok) {
         await loadBonsCommande();
         setShowModal(false);
@@ -198,81 +243,79 @@ export default function BonsCommandePage() {
   };
 
   const exportPDF = async (bon) => {
+    const branding = await ensureBranding();
     const doc = new jsPDF();
-    
-    // GSBSMA (ou nom de l'organisation) en haut à gauche
-    doc.setFontSize(11);
+    const pdfBranding = createPdfBranding(doc, branding);
+    pdfBranding.applyOnPage();
+
+    const centerX = doc.internal.pageSize.getWidth() / 2;
+    let yPos = pdfBranding.headerBottomY + 6;
+
+    doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('GSBSMA', 20, 20);
+    doc.text('BON DE COMMANDE', centerX, yPos, { align: 'center' });
     doc.setFont(undefined, 'normal');
-    
-    // BON DE COMMANDE N° et Date en haut à droite
-    doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
-    doc.text('BON DE COMMANDE N°', 105, 30, { align: 'center' });
-    doc.setFont(undefined, 'normal');
-    
+
     doc.setFontSize(11);
-    doc.text(bon.numero, 160, 35);
-    doc.text('Date', 160, 42);
-    doc.text(new Date(bon.date_commande).toLocaleDateString('fr-FR'), 175, 42);
-    
-    // Cadre Fournisseur
+    yPos += 9;
+    doc.text(`Numéro: ${bon.numero}`, 20, yPos);
+    yPos += 7;
+    doc.text(`Date: ${new Date(bon.date_commande).toLocaleDateString('fr-FR')}`, 20, yPos);
+
     doc.setFontSize(10);
-    let yPos = 55;
-    
-    doc.text('Fournisseur:', 20, yPos);
-    doc.setFont(undefined, 'bold');
-    doc.text(bon.fournisseur_nom || '', 50, yPos);
-    doc.setFont(undefined, 'normal');
-    
-    yPos += 7;
-    if (bon.fournisseur_adresse) {
-      doc.text('Adresse:', 20, yPos);
-      doc.text(bon.fournisseur_adresse, 50, yPos);
-      yPos += 7;
-    }
-    
-    if (bon.fournisseur_telephone) {
-      doc.text('Telephone:', 20, yPos);
-      doc.text(bon.fournisseur_telephone, 50, yPos);
-      yPos += 7;
-    }
-    
-    // Demande d'achat et Date de livraison
-    yPos += 3;
-    doc.text('Demande d\'achat n:', 20, yPos);
-    doc.text('_______________', 60, yPos);
-    
-    doc.text('de', 100, yPos);
-    doc.text('_______________', 110, yPos);
-    
-    yPos += 7;
-    doc.text('Date de livraison:', 20, yPos);
-    doc.text('_______________', 60, yPos);
-    
-    // Tableau des articles
     yPos += 10;
+    const hasSupplierInfo = Boolean(
+      bon.fournisseur_nom ||
+      bon.fournisseur_adresse ||
+      bon.fournisseur_telephone
+    );
+
+    if (hasSupplierInfo) {
+      doc.text('Fournisseur:', 20, yPos);
+      doc.setFont(undefined, 'bold');
+      doc.text(bon.fournisseur_nom || '', 50, yPos);
+      doc.setFont(undefined, 'normal');
+
+      yPos += 6;
+      if (bon.fournisseur_adresse) {
+        doc.text('Adresse:', 20, yPos);
+        doc.text(bon.fournisseur_adresse, 50, yPos);
+        yPos += 6;
+      }
+
+      if (bon.fournisseur_telephone) {
+        doc.text('Téléphone:', 20, yPos);
+        doc.text(bon.fournisseur_telephone, 50, yPos);
+        yPos += 6;
+      }
+    }
+
+    yPos += 8;
+    doc.text("Demande d'achat n° _____________   de _____________", 20, yPos);
+    yPos += 7;
+    doc.text('Date de livraison: _______________', 20, yPos);
+
+    const tableStartY = Math.max(pdfBranding.contentStartY, yPos + 10);
     const tableData = bon.items.map(item => [
-      item.code || item.designation,  // Références
-      item.designation,               // Désignations
-      item.quantite,                  // Quantité
-      // Formatage des montants sans espaces insécables
-      item.prix_unitaire.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' '), // Prix Unitaire
-      item.montant.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')        // TOTAL
+      item.code || item.designation,
+      item.designation,
+      item.unite || '',
+      item.quantite,
+      item.prix_unitaire.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' '),
+      item.montant.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
     ]);
-    
+
     doc.autoTable({
-      startY: yPos,
-      head: [['Références', 'Désignations', 'Quantité', 'Prix\nUnitaire', 'TOTAL']],
+      startY: tableStartY,
+      head: [['Références', 'Désignations', 'Unité', 'Quantité', 'Prix\nUnitaire', 'TOTAL']],
       body: tableData,
       theme: 'grid',
-      styles: { 
+      styles: {
         fontSize: 9,
         cellPadding: 3,
         halign: 'left'
       },
-      headStyles: { 
+      headStyles: {
         fillColor: [255, 255, 255],
         textColor: [0, 0, 0],
         lineWidth: 0.5,
@@ -281,58 +324,65 @@ export default function BonsCommandePage() {
         halign: 'center'
       },
       columnStyles: {
-        2: { halign: 'center' }, // Quantité centré
-        3: { halign: 'right' },  // Prix à droite
-        4: { halign: 'right' }   // Total à droite
+        2: { halign: 'center' },
+        3: { halign: 'center' },
+        4: { halign: 'right' },
+        5: { halign: 'right' }
       },
       bodyStyles: {
         lineWidth: 0.5,
         lineColor: [0, 0, 0]
-      }
+      },
+      margin: { top: pdfBranding.marginTop, bottom: pdfBranding.marginBottom },
+      didDrawPage: () => pdfBranding.applyOnPage()
     });
-    
-    // Total général
-    const finalY = doc.lastAutoTable.finalY + 5;
+
+    const finalY = doc.lastAutoTable.finalY + 6;
     doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
-    // Formatage du montant sans espaces insécables
     const montantFormate = bon.montant_total.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-    // Affichage du montant total en une seule ligne avec bon espacement
-    doc.text(`MONTANT TOTAL:  ${montantFormate} FCFA`, 105, finalY, { align: 'center' });
+    doc.text(`MONTANT TOTAL: ${montantFormate} FCFA`, centerX, finalY, { align: 'center' });
     doc.setFont(undefined, 'normal');
-    
-    // Observations si présentes
+
     let notesY = finalY + 10;
     if (bon.observations) {
       doc.setFontSize(9);
-      doc.text('Observations:', 20, notesY);
+      doc.text('Observations :', 20, notesY);
       doc.text(bon.observations, 20, notesY + 5, { maxWidth: 170 });
-      notesY += 15;
     }
-    
-    // Note importante
-    // notesY = Math.max(notesY, finalY + 15);
-    // doc.setFontSize(8);
-    // doc.setFont(undefined, 'italic');
-    // doc.text('Important:', 20, notesY);
-    // doc.text('Le détaillé de ce Bon de Commande doit être', 20, notesY + 5);
-    // doc.text('rédigé avec votre facture sans faute ni perte.', 20, notesY + 10);
-    // doc.setFont(undefined, 'normal');
-    
-    // Signatures en bas
-    // const signatureY = 260;
-    // doc.setFontSize(10);
-    // doc.text('Le Directeur Administratif et Financier', 20, signatureY);
-    // doc.text('Le Directeur Général', 120, signatureY);
-    
-    // // Ligne de signature
-    // doc.line(20, signatureY + 15, 80, signatureY + 15);
-    // doc.line(120, signatureY + 15, 180, signatureY + 15);
-    
+
     doc.save(`bon-commande-${bon.numero}.pdf`);
   };
 
-  const generateBonPrintHtml = (bon, items, fournisseur) => {
+  const generateBonPrintHtml = (bon, items, fournisseur, branding) => {
+    const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
+    const hasSupplier = Boolean(
+      bon.fournisseur_nom ||
+      fournisseur?.contact ||
+      fournisseur?.email
+    );
+
+    const supplierSection = hasSupplier ? `
+            <div class="section">
+              <div class="section-title">Fournisseur</div>
+              ${bon.fournisseur_nom ? `
+              <div class="field">
+                <div class="field-label">Nom:</div>
+                <div class="field-value">${bon.fournisseur_nom}</div>
+              </div>` : ''}
+              ${fournisseur?.contact ? `
+              <div class="field">
+                <div class="field-label">Contact:</div>
+                <div class="field-value">${fournisseur.contact}</div>
+              </div>` : ''}
+              ${fournisseur?.email ? `
+              <div class="field">
+                <div class="field-label">Email:</div>
+                <div class="field-value">${fournisseur.email}</div>
+              </div>` : ''}
+            </div>
+    ` : '';
+
     return `
         <!DOCTYPE html>
         <html>
@@ -340,6 +390,7 @@ export default function BonsCommandePage() {
           <meta charset="UTF-8">
           <title>Bon de Commande</title>
           <style>
+            ${brandingStyles}
             body { font-family: Arial, sans-serif; margin: 20px; }
             .header { text-align: center; margin-bottom: 30px; }
             .header h1 { margin: 0; color: #1e293b; font-size: 24px; }
@@ -354,17 +405,17 @@ export default function BonsCommandePage() {
             .status-en_cours { background-color: #dbeafe; color: #1e40af; }
             .status-livree { background-color: #dcfce7; color: #166534; }
             .status-annulee { background-color: #fee2e2; color: #991b1b; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th { background-color: #f1f5f9; padding: 10px; text-align: left; font-weight: bold; border-bottom: 2px solid #e2e8f0; }
-            td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #e2e8f0; }
+            th { background-color: #f1f5f9; padding: 10px; text-align: left; font-weight: bold; border: 1px solid #e2e8f0; }
+            td { padding: 8px 10px; border: 1px solid #e2e8f0; }
             .total-row { font-weight: bold; background-color: #f8fafc; }
-            .footer { margin-top: 30px; text-align: center; color: #94a3b8; font-size: 12px; }
           </style>
         </head>
         <body>
+          ${headerHtml}
           <div class="header">
-            <h1>Bon de Commande</h1>
-            <p>N° ${bon.numero} - Imprimé le ${new Date().toLocaleString('fr-FR')}</p>
+            <h1><u><b>Bon de Commande</b></u></h1>
+            <p>N° ${bon.numero} - Imprimé le ${new Date().toLocaleDateString('fr-FR')}</p>
           </div>
           
           <div class="content">
@@ -376,7 +427,7 @@ export default function BonsCommandePage() {
               </div>
               <div class="field">
                 <div class="field-label">Date:</div>
-                <div class="field-value">${new Date(bon.date_commande).toLocaleString('fr-FR')}</div>
+                <div class="field-value">${new Date(bon.date_commande).toLocaleDateString('fr-FR')}</div>
               </div>
               <div class="field">
                 <div class="field-label">Statut:</div>
@@ -386,25 +437,7 @@ export default function BonsCommandePage() {
               </div>
             </div>
 
-            <div class="section">
-              <div class="section-title">Fournisseur</div>
-              <div class="field">
-                <div class="field-label">Nom:</div>
-                <div class="field-value">${bon.fournisseur_nom}</div>
-              </div>
-              ${fournisseur?.contact ? `
-              <div class="field">
-                <div class="field-label">Contact:</div>
-                <div class="field-value">${fournisseur.contact}</div>
-              </div>
-              ` : ''}
-              ${fournisseur?.email ? `
-              <div class="field">
-                <div class="field-label">Email:</div>
-                <div class="field-value">${fournisseur.email}</div>
-              </div>
-              ` : ''}
-            </div>
+            ${supplierSection}
 
             <div class="section">
               <div class="section-title">Articles commandés</div>
@@ -413,6 +446,7 @@ export default function BonsCommandePage() {
                   <tr>
                     <th>Code</th>
                     <th>Désignation</th>
+                    <th style="text-align: center;">Unité</th>
                     <th style="text-align: right;">Quantité</th>
                     <th style="text-align: right;">Prix unitaire</th>
                     <th style="text-align: right;">Total</th>
@@ -423,6 +457,7 @@ export default function BonsCommandePage() {
                   <tr>
                     <td>${item.code}</td>
                     <td>${item.designation}</td>
+                    <td style="text-align: center;">${item.unite || ''}</td>
                     <td style="text-align: right;">${item.quantite}</td>
                     <td style="text-align: right;">${item.prix_unitaire.toLocaleString('fr-FR')} FCFA</td>
                     <td style="text-align: right;">${(item.quantite * item.prix_unitaire).toLocaleString('fr-FR')} FCFA</td>
@@ -443,10 +478,9 @@ export default function BonsCommandePage() {
             </div>
             ` : ''}
 
-            <div class="footer">
-              <p>Ce document a été généré automatiquement par le système de gestion de stock</p>
-            </div>
           </div>
+          <b>${footerHtml}</b>
+          <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
         </body>
         </html>
       `;
@@ -464,8 +498,9 @@ export default function BonsCommandePage() {
       const bonDetails = result.data;
       const fournisseur = fournisseurs.find(f => f.id === bon.fournisseur_id);
       const items = bonDetails.items || [];
+      const branding = await ensureBranding();
       
-      const html = generateBonPrintHtml(bon, items, fournisseur);
+      const html = generateBonPrintHtml(bon, items, fournisseur, branding);
       setPrintPreviewHtml(html);
       setShowPrintPreview(true);
     } catch (err) {
@@ -489,9 +524,63 @@ export default function BonsCommandePage() {
       observations: '',
       items: []
     });
-    setNewItem({ article_id: '', quantite: 1, prix_unitaire: 0 });
+    setNewItem({ article_id: '', quantite: 1, prix_unitaire: 0, unite: '' });
     setSelectedArticle(null);
     setArticleSearchTerm('');
+  };
+
+  const resetQuickArticleForm = () => {
+    setQuickArticleForm({
+      code: '',
+      designation: '',
+      unite: 'unité',
+      prix_unitaire: 0,
+      quantite_stock: 0,
+      quantite_min: 0,
+      unite_conditionnement: '',
+      qte_par_conditionnement: 1
+    });
+    setQuickArticleError(null);
+  };
+
+  const handleQuickArticleSubmit = async (e) => {
+    e.preventDefault();
+    setQuickArticleLoading(true);
+    setQuickArticleError(null);
+
+    const payload = {
+      ...quickArticleForm,
+      prix_unitaire: Number(quickArticleForm.prix_unitaire) || 0,
+      quantite_stock: Number(quickArticleForm.quantite_stock) || 0,
+      quantite_min: Number(quickArticleForm.quantite_min) || 0,
+      qte_par_conditionnement: Number(quickArticleForm.qte_par_conditionnement) || 1
+    };
+
+    try {
+      const result = await window.api.articles.add(payload);
+      if (result.ok) {
+        await loadArticles();
+        resetQuickArticleForm();
+        setShowQuickArticleModal(false);
+
+        const newlyCreated = result.data;
+        if (newlyCreated?.id) {
+          setSelectedArticle(newlyCreated);
+          setNewItem((prev) => ({
+            ...prev,
+            article_id: newlyCreated.id,
+            prix_unitaire: newlyCreated.prix_unitaire || 0,
+            unite: newlyCreated.unite || newlyCreated.unite_conditionnement || ''
+          }));
+        }
+      } else {
+        setQuickArticleError(result.error || 'Erreur lors de la création de l’article');
+      }
+    } catch (err) {
+      setQuickArticleError('Erreur lors de la création de l’article');
+    } finally {
+      setQuickArticleLoading(false);
+    }
   };
 
   // Gestion de la recherche d'articles
@@ -515,21 +604,68 @@ export default function BonsCommandePage() {
     }
   };
 
+  const unitOptionsForSelectedArticle = useMemo(() => {
+    if (!selectedArticle) return [];
+    const options = [];
+    if (selectedArticle.unite) {
+      options.push({
+        value: selectedArticle.unite,
+        label: selectedArticle.unite,
+        helper: 'Unité principale'
+      });
+    }
+    if (selectedArticle.unite_conditionnement) {
+      options.push({
+        value: selectedArticle.unite_conditionnement,
+        label: selectedArticle.unite_conditionnement,
+        helper: 'Unité secondaire'
+      });
+    }
+    return options;
+  }, [selectedArticle]);
+
   const handleSelectArticle = (article) => {
     setSelectedArticle(article);
-    setNewItem({
-      ...newItem,
+    const defaultUnit = article.unite || article.unite_conditionnement || '';
+    setNewItem((prev) => ({
+      ...prev,
       article_id: article.id,
-      prix_unitaire: article.prix_unitaire || 0
-    });
+      prix_unitaire: article.prix_unitaire || 0,
+      unite: defaultUnit
+    }));
     setShowArticleDropdown(false);
   };
 
   const handleClearArticleSelection = () => {
     setSelectedArticle(null);
-    setNewItem({ ...newItem, article_id: '', prix_unitaire: 0 });
+    setNewItem((prev) => ({ ...prev, article_id: '', prix_unitaire: 0, unite: '' }));
     setArticleSearchTerm('');
   };
+
+  const handleNewItemUnitChange = useCallback((unit) => {
+    setNewItem((prev) => {
+      if (!selectedArticle) return { ...prev, unite: unit };
+      let updatedPrice = prev.prix_unitaire;
+      const basePrice = Number(selectedArticle.prix_unitaire) || 0;
+      const ratio = Number(selectedArticle.qte_par_conditionnement) || 0;
+
+      if (unit === selectedArticle.unite && basePrice) {
+        updatedPrice = basePrice;
+      } else if (
+        unit === selectedArticle.unite_conditionnement &&
+        basePrice &&
+        ratio > 0
+      ) {
+        updatedPrice = basePrice / ratio;
+      }
+
+      return {
+        ...prev,
+        unite: unit,
+        prix_unitaire: Number.isFinite(updatedPrice) ? parseFloat(updatedPrice.toFixed(2)) : prev.prix_unitaire
+      };
+    });
+  }, [selectedArticle]);
 
   const handleToggleArticleDropdown = () => {
     setShowArticleDropdown(!showArticleDropdown);
@@ -570,7 +706,7 @@ export default function BonsCommandePage() {
     const search = searchTerm.toLowerCase();
     return (
       bon.numero.toLowerCase().includes(search) ||
-      bon.fournisseur_nom.toLowerCase().includes(search) ||
+      (bon.fournisseur_nom || '').toLowerCase().includes(search) ||
       bon.statut.toLowerCase().includes(search) ||
       formatDate(bon.date_commande).toLowerCase().includes(search)
     );
@@ -660,7 +796,7 @@ export default function BonsCommandePage() {
                 <tr key={bon.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                   <td className="px-4 py-3 text-sm font-medium">{bon.numero}</td>
                   <td className="px-4 py-3 text-sm">{formatDate(bon.date_commande)}</td>
-                  <td className="px-4 py-3 text-sm">{bon.fournisseur_nom}</td>
+                  <td className="px-4 py-3 text-sm">{bon.fournisseur_nom || '—'}</td>
                   <td className="px-4 py-3 text-right text-sm font-semibold">
                     {bon.montant_total.toLocaleString('fr-FR')} FCFA
                   </td>
@@ -786,14 +922,13 @@ export default function BonsCommandePage() {
               <form id="bonForm" onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium">Fournisseur *</label>
+                  <label className="block text-sm font-medium">Fournisseur (optionnel)</label>
                   <select
-                    required
                     value={formData.fournisseur_id}
                     onChange={(e) => setFormData({ ...formData, fournisseur_id: e.target.value })}
                     className="mt-1 w-full rounded border px-3 py-2"
                   >
-                    <option value="">Sélectionner</option>
+                    <option value="">Aucun fournisseur</option>
                     {fournisseurs.map(f => (
                       <option key={f.id} value={f.id}>{f.nom}</option>
                     ))}
@@ -813,7 +948,17 @@ export default function BonsCommandePage() {
 
               {/* Ajout d'articles */}
               <div className="rounded border p-4">
-                <h3 className="mb-3 font-semibold">Articles</h3>
+                <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+                  <h3 className="font-semibold">Articles</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickArticleModal(true)}
+                    className="flex items-center gap-2 rounded bg-primary-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-600"
+                  >
+                    <PlusIcon className="h-4 w-4" />
+                    Nouvel article
+                  </button>
+                </div>
                 <div className="grid grid-cols-4 gap-3">
                   <div className="col-span-2 relative" ref={articleDropdownRef}>
                     {/* Bouton principal de sélection */}
@@ -929,6 +1074,48 @@ export default function BonsCommandePage() {
                       className="w-full rounded border px-3 py-2 text-sm"
                     />
                   </div>
+                  {selectedArticle && (
+                    <div className="col-span-4">
+                      <label className="block text-sm font-medium mb-2">Unité utilisée</label>
+                      {unitOptionsForSelectedArticle.length > 0 ? (
+                        <>
+                          <div className="flex flex-wrap gap-3">
+                            {unitOptionsForSelectedArticle.map((option) => {
+                              const isActive = newItem.unite === option.value;
+                              return (
+                                <label
+                                  key={option.value}
+                                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer ${
+                                    isActive ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-300 text-slate-700'
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    className="sr-only"
+                                    name="item-unit"
+                                    value={option.value}
+                                    checked={isActive}
+                                    onChange={() => handleNewItemUnitChange(option.value)}
+                                  />
+                                  <span className="font-semibold">{option.label}</span>
+                                  <span className="text-xs text-slate-500">{option.helper}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          {selectedArticle.unite_conditionnement && selectedArticle.qte_par_conditionnement > 0 && (
+                            <p className="mt-2 text-xs text-slate-500">
+                              1 {selectedArticle.unite} = {selectedArticle.qte_par_conditionnement} {selectedArticle.unite_conditionnement}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-slate-500">
+                          Définissez l'unité principale et secondaire dans la fiche article pour activer la conversion.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -946,7 +1133,8 @@ export default function BonsCommandePage() {
                         <tr className="border-b">
                           <th className="px-2 py-2 text-left">Article</th>
                           <th className="px-2 py-2 text-right">Qté</th>
-                          <th className="px-2 py-2 text-right">P.U.</th>
+                      <th className="px-2 py-2 text-center">Unité</th>
+                      <th className="px-2 py-2 text-right">P.U.</th>
                           <th className="px-2 py-2 text-right">Total</th>
                           <th className="px-2 py-2"></th>
                         </tr>
@@ -972,7 +1160,7 @@ export default function BonsCommandePage() {
                           </tr>
                         ))}
                         <tr className="font-bold">
-                          <td colSpan={3} className="px-2 py-2 text-right">TOTAL:</td>
+                          <td colSpan={4} className="px-2 py-2 text-right">TOTAL:</td>
                           <td className="px-2 py-2 text-right">{calculateTotal().toLocaleString()} FCFA</td>
                           <td></td>
                         </tr>
@@ -1017,6 +1205,139 @@ export default function BonsCommandePage() {
         </div>
       )}
 
+      {/* Modal ajout rapide article */}
+      {showQuickArticleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <h2 className="text-lg font-semibold">Nouvel article</h2>
+              <button
+                type="button"
+                onClick={() => { setShowQuickArticleModal(false); resetQuickArticleForm(); }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <XMarkIcon className="h-6 w-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickArticleSubmit} className="space-y-4 px-6 py-4">
+              {quickArticleError && (
+                <div className="rounded bg-red-50 p-2 text-sm text-red-600">{quickArticleError}</div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium">Code *</label>
+                  <input
+                    type="text"
+                    required
+                    value={quickArticleForm.code}
+                    onChange={(e) => setQuickArticleForm({ ...quickArticleForm, code: e.target.value })}
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Unité</label>
+                  <input
+                    type="text"
+                    value={quickArticleForm.unite}
+                    onChange={(e) => setQuickArticleForm({ ...quickArticleForm, unite: e.target.value })}
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Unité secondaire</label>
+                  <input
+                    type="text"
+                    value={quickArticleForm.unite_conditionnement}
+                    onChange={(e) => setQuickArticleForm({ ...quickArticleForm, unite_conditionnement: e.target.value })}
+                    placeholder="Ex: Boîte, Bouteille..."
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">
+                  Équivalence (1 {quickArticleForm.unite || 'unité'} = ? {quickArticleForm.unite_conditionnement || 'unité secondaire'})
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quickArticleForm.qte_par_conditionnement}
+                  onChange={(e) => setQuickArticleForm({ ...quickArticleForm, qte_par_conditionnement: e.target.value })}
+                  className="mt-1 w-full rounded border px-3 py-2"
+                  disabled={!quickArticleForm.unite_conditionnement}
+                />
+                <p className="mt-1 text-xs text-slate-500">Saisissez combien d'unités secondaires équivalent à 1 unité principale.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium">Désignation *</label>
+                <input
+                  type="text"
+                  required
+                  value={quickArticleForm.designation}
+                  onChange={(e) => setQuickArticleForm({ ...quickArticleForm, designation: e.target.value })}
+                  className="mt-1 w-full rounded border px-3 py-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="block text-sm font-medium">Prix unitaire</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickArticleForm.prix_unitaire}
+                    onChange={(e) => setQuickArticleForm({ ...quickArticleForm, prix_unitaire: e.target.value })}
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Quantité stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickArticleForm.quantite_stock}
+                    onChange={(e) => setQuickArticleForm({ ...quickArticleForm, quantite_stock: e.target.value })}
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Quantité min</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickArticleForm.quantite_min}
+                    onChange={(e) => setQuickArticleForm({ ...quickArticleForm, quantite_min: e.target.value })}
+                    className="mt-1 w-full rounded border px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setShowQuickArticleModal(false); resetQuickArticleForm(); }}
+                  className="rounded border px-4 py-2 text-sm font-medium"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickArticleLoading}
+                  className="rounded bg-primary-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {quickArticleLoading ? 'En cours...' : 'Créer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal détails */}
       {showDetailModal && selectedBon && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -1036,12 +1357,14 @@ export default function BonsCommandePage() {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded border p-4">
-                <h3 className="mb-2 font-semibold">Fournisseur</h3>
-                <p className="font-medium">{selectedBon.fournisseur_nom}</p>
-                {selectedBon.fournisseur_adresse && <p className="text-sm">{selectedBon.fournisseur_adresse}</p>}
-                {selectedBon.fournisseur_telephone && <p className="text-sm">Tél: {selectedBon.fournisseur_telephone}</p>}
-              </div>
+              {(selectedBon.fournisseur_nom || selectedBon.fournisseur_adresse || selectedBon.fournisseur_telephone) && (
+                <div className="rounded border p-4">
+                  <h3 className="mb-2 font-semibold">Fournisseur</h3>
+                  {selectedBon.fournisseur_nom && <p className="font-medium">{selectedBon.fournisseur_nom}</p>}
+                  {selectedBon.fournisseur_adresse && <p className="text-sm">{selectedBon.fournisseur_adresse}</p>}
+                  {selectedBon.fournisseur_telephone && <p className="text-sm">Tél: {selectedBon.fournisseur_telephone}</p>}
+                </div>
+              )}
 
               <div>
                 <h3 className="mb-2 font-semibold">Articles commandés</h3>
@@ -1063,6 +1386,7 @@ export default function BonsCommandePage() {
                         <td className="px-2 py-2">{item.designation}</td>
                         <td className="px-2 py-2 text-center">{item.unite}</td>
                         <td className="px-2 py-2 text-right">{item.quantite}</td>
+                        <td className="px-2 py-2 text-center">{item.unite || item.article_unite || '-'}</td>
                         <td className="px-2 py-2 text-right">{item.prix_unitaire.toLocaleString()}</td>
                         <td className="px-2 py-2 text-right font-semibold">{item.montant.toLocaleString()}</td>
                       </tr>
