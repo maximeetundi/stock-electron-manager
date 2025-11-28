@@ -5,7 +5,7 @@ import PeriodSelector from '@/components/common/PeriodSelector.jsx';
 import { ClipboardDocumentListIcon, TagIcon } from '@heroicons/react/24/outline';
 import classNames from 'classnames';
 import jsPDF from 'jspdf';
-import { appApi, fileApi } from '@/utils/apiClient';
+import { fileApi } from '@/utils/apiClient';
 import { formatCurrency, formatDate, formatTime } from '@/utils/format';
 import { loadDocumentBranding, createPdfBranding, getPrintBrandingBlocks } from '@/utils/documentBranding';
 
@@ -53,13 +53,6 @@ export default function TransactionsSection({
     const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
     const rand = Math.random().toString(36).slice(2, 6);
     const receiptNo = `REC-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${preview.id}`;
-
-    // Load organization settings
-    let orgName = 'Ecole Finances';
-    try {
-      const s = await appApi.getSettings();
-      if (s?.org_name) orgName = s.org_name;
-    } catch {}
 
     // Body card
     doc.setTextColor(31, 41, 55); // slate-800
@@ -113,11 +106,6 @@ export default function TransactionsSection({
     const pad = (n) => String(n).padStart(2, '0');
     const d = new Date(preview.dateHeure);
     const receiptNo = `REC-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${preview.id}`;
-    let orgName = 'Ecole Finances';
-    try {
-      const s = await appApi.getSettings();
-      if (s?.org_name) orgName = s.org_name;
-    } catch {}
     const html = `<!doctype html>
       <html>
         <head>
@@ -147,7 +135,8 @@ export default function TransactionsSection({
           <div class="header">
             <div class="left">
               <div>
-                <div class="sub">${titleForPreview}</div>
+                <div class="title">${titleForPreview}</div>
+                <div class="sub">Détails de l’opération</div>
               </div>
             </div>
             <div style="text-align:right; font-size:12px">

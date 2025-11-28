@@ -54,10 +54,16 @@ const parseLines = (value, fallback) => {
 };
 
 const withSeparators = (lines) => {
-  const clean = (lines || []).filter(Boolean);
+  const clean = (lines || []).map((line) => line && line.trim()).filter(Boolean);
   if (!clean.length) return [];
-  // Retourner les lignes sans séparateurs
-  return clean.map((line) => ({ text: line, isSeparator: false }));
+  const isSeparatorLine = (value) => {
+    const collapsed = value.replace(/\s+/g, '');
+    return /^[*•\-–—]+$/.test(collapsed);
+  };
+  return clean.map((line) => ({
+    text: line,
+    isSeparator: isSeparatorLine(line)
+  }));
 };
 
 const normalizeSigners = (raw) => {
@@ -152,7 +158,7 @@ const drawHeader = (doc, branding) => {
   const { left, right } = DEFAULT_MARGINS;
   const center = pageWidth / 2;
   const top = DEFAULT_MARGINS.top;
-  const lineHeight = 4.2;
+  const lineHeight = 4;
   const header = branding?.header || {};
   const leftEntries = withSeparators(header.leftLines || []);
   const rightEntries = withSeparators(header.rightLines || []);
@@ -161,31 +167,44 @@ const drawHeader = (doc, branding) => {
   const leftColumnCenter = left + Math.max(leftColumnWidth / 2, 0);
   const rightColumnCenter = center + Math.max(rightColumnWidth / 2, 0);
 
-  doc.setFontSize(8);
+  const baseFontSize = 7;
+  doc.setFontSize(baseFontSize);
   doc.setFont(undefined, 'bold');
-  leftEntries.forEach((entry, idx) => {
-    const y = top + idx * lineHeight;
-    if (entry.isSeparator) {
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(7);
-      doc.text(entry.text, leftColumnCenter, y, { align: 'center' });
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(8);
-    } else {
-      doc.text(entry.text, left, y, { align: 'left' });
-    }
+  const maxLeftWidth = Math.max(leftColumnWidth - 8, 40);
+  const maxRightWidth = Math.max(right - center - 8, 40);
+
+  const renderColumn = (entries, { align, x, maxWidth, separatorX }) => {
+    let currentY = top;
+    entries.forEach((entry) => {
+      if (entry.isSeparator) {
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(7);
+        doc.text(entry.text, separatorX, currentY + 1.5, { align: 'center' });
+        doc.setFont(undefined, 'bold');
+        doc.setFontSize(8);
+        currentY += lineHeight;
+      } else {
+        const lines = doc.splitTextToSize(entry.text, maxWidth);
+        doc.text(lines, x, currentY, { align });
+        currentY += lines.length * lineHeight;
+      }
+    });
+  };
+
+  const separatorOffset = 6;
+
+  renderColumn(leftEntries, {
+    align: 'left',
+    x: left,
+    maxWidth: maxLeftWidth,
+    separatorX: left + maxLeftWidth / 2 - separatorOffset
   });
-  rightEntries.forEach((entry, idx) => {
-    const y = top + idx * lineHeight;
-    if (entry.isSeparator) {
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(7);
-      doc.text(entry.text, rightColumnCenter, y, { align: 'center' });
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(8);
-    } else {
-      doc.text(entry.text, right, y, { align: 'right' });
-    }
+
+  renderColumn(rightEntries, {
+    align: 'right',
+    x: right,
+    maxWidth: maxRightWidth,
+    separatorX: right - maxRightWidth / 2 + separatorOffset
   });
 
   let centerY = top + 4;
@@ -198,14 +217,23 @@ const drawHeader = (doc, branding) => {
       console.warn('Impossible d’ajouter le visuel au PDF', error);
     }
   }
-  doc.setFontSize(10);
-  if (header.centerTitle) {
-    doc.text(header.centerTitle, center, centerY, { align: 'center' });
-    centerY += 5;
-  }
+  const centerTitleMaxWidth = pageWidth * 0.35;
   doc.setFontSize(9);
+  if (header.centerTitle) {
+    const titleLines = doc.splitTextToSize(header.centerTitle, centerTitleMaxWidth);
+    titleLines.forEach((line) => {
+      doc.text(line, center, centerY, { align: 'center' });
+      centerY += lineHeight;
+    });
+    centerY += 1;
+  }
+  doc.setFontSize(8);
   if (header.centerSubtitle) {
-    doc.text(header.centerSubtitle, center, centerY, { align: 'center' });
+    const subtitleLines = doc.splitTextToSize(header.centerSubtitle, centerTitleMaxWidth);
+    subtitleLines.forEach((line) => {
+      doc.text(line, center, centerY, { align: 'center' });
+      centerY += lineHeight;
+    });
   }
 };
 

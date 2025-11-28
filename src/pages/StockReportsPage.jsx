@@ -20,6 +20,14 @@ import * as XLSX from 'xlsx';
 import { generateEtatStockPrintHtml, generateBonsCommandePrintHtml, generateMouvementsPrintHtml } from '@/utils/printReports';
 import { loadDocumentBranding, createPdfBranding } from '@/utils/documentBranding';
 
+const buildExportFileName = (prefix, extension) => {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const randomId = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${prefix}-${timestamp}-${randomId}.${extension}`;
+};
+
 const PERIOD_CHOICES = [
   { key: 'all', label: 'Toutes les périodes' },
   ...PERIOD_OPTIONS.filter((option) => option.key !== 'custom').map((option) => ({
@@ -298,7 +306,7 @@ useEffect(() => {
     doc.text(`Valeur moyenne par article: ${valeurMoyenne} FCFA`, 20, finalY + 21);
     doc.text(`Taux d'alerte: ${stats.totalArticles ? ((stats.articlesEnAlerte / stats.totalArticles) * 100).toFixed(1) : 0}%`, 20, finalY + 28);
 
-    doc.save(`etat-stock-${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(buildExportFileName('etat-stock', 'pdf'));
   };
 
   const exportBonsCommandePDF = async () => {
@@ -374,7 +382,7 @@ useEffect(() => {
     doc.text(`Bons annulés: ${bonsAnnules}`, 20, finalY + 21);
     doc.text(`Montant moyen par bon: ${montantMoyen} FCFA`, 20, finalY + 28);
 
-    doc.save(`bons-commande-${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(buildExportFileName('rapport-bons-commande', 'pdf'));
   };
 
   const exportMouvementsPDF = async () => {
@@ -457,7 +465,7 @@ useEffect(() => {
     doc.text(`Quantité moyenne par mouvement: ${quantiteMoyenne} unités`, 20, finalY + 21);
     doc.text(`Balance: ${(quantiteEntrees - quantiteSorties > 0 ? '+' : '')}${(quantiteEntrees - quantiteSorties).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} unités`, 20, finalY + 28);
 
-    doc.save(`mouvements-stock-${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(buildExportFileName('mouvements-stock', 'pdf'));
   };
 
   const exportEtatStockExcel = () => {
@@ -475,7 +483,7 @@ useEffect(() => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'État des Stocks');
-    XLSX.writeFile(wb, `etat-stock-${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, buildExportFileName('etat-stock', 'xlsx'));
   };
 
   const exportBonsCommandeExcel = () => {
@@ -491,7 +499,7 @@ useEffect(() => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Bons de Commande');
-    XLSX.writeFile(wb, `bons-commande-${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, buildExportFileName('rapport-bons-commande', 'xlsx'));
   };
 
   const exportMouvementsExcel = () => {
@@ -509,7 +517,7 @@ useEffect(() => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Mouvements');
-    XLSX.writeFile(wb, `mouvements-stock-${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, buildExportFileName('mouvements-stock', 'xlsx'));
   };
 
   // Fonctions pour l'impression avec aperçu

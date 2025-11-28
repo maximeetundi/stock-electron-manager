@@ -40,6 +40,8 @@ export default function SettingsPage() {
   const [defaultDashboard, setDefaultDashboard] = useState('finances');
   const [dashboardFeedback, setDashboardFeedback] = useState(null);
   const [modeFeedback, setModeFeedback] = useState(null);
+  const [sessionDurationHours, setSessionDurationHours] = useState(24);
+  const [sessionFeedback, setSessionFeedback] = useState(null);
   const [docHeaderLeft, setDocHeaderLeft] = useState('');
   const [docHeaderRight, setDocHeaderRight] = useState('');
   const [docHeaderCenterTitle, setDocHeaderCenterTitle] = useState('');
@@ -169,6 +171,11 @@ export default function SettingsPage() {
         setOrgName(s.org_name || '');
         setOrgLogoPath(s.org_logo_path || '');
         setDefaultDashboard(s.default_dashboard || 'finances');
+        setSessionDurationHours(
+          Number.isFinite(Number(s.session_duration_hours)) && Number(s.session_duration_hours) > 0
+            ? Number(s.session_duration_hours)
+            : 24
+        );
         setDocHeaderLeft(s.doc_header_left || '');
         setDocHeaderRight(s.doc_header_right || '');
         setDocHeaderCenterTitle(s.doc_header_center_title || '');
@@ -227,6 +234,22 @@ export default function SettingsPage() {
       setDashboardFeedback({ type: 'success', message: 'Préférence de dashboard enregistrée.' });
     } catch (e) {
       setDashboardFeedback({ type: 'error', message: e.message || "Impossible d'enregistrer la préférence." });
+    }
+  };
+
+  const saveSessionPreferences = async () => {
+    try {
+      setSessionFeedback(null);
+      const parsed = Number(sessionDurationHours);
+      const hours = Number.isFinite(parsed) && parsed > 0 ? parsed : 24;
+      await appApi.updateSettings({ session_duration_hours: hours });
+      setSessionDurationHours(hours);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('ef-session-duration-updated', { detail: hours }));
+      }
+      setSessionFeedback({ type: 'success', message: 'Durée de session enregistrée.' });
+    } catch (error) {
+      setSessionFeedback({ type: 'error', message: error.message || 'Impossible de sauvegarder la durée de session.' });
     }
   };
 
@@ -763,6 +786,47 @@ export default function SettingsPage() {
             ))}
           </div>
         ) : null}
+      </div>
+
+      <div className="mt-10 rounded-3xl bg-white/80 p-6 shadow-xl dark:bg-slate-900/80 max-w-2xl">
+        <h2 className="flex items-center gap-2 text-xl font-semibold text-slate-900 dark:text-slate-100">
+          <LockClosedIcon className="h-5 w-5 text-primary-500" />
+          Durée de session
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Définissez combien de temps votre session reste active même si vous fermez l’application. Par défaut, vous restez connecté(e) pendant 24 heures.
+        </p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="flex-1 text-sm font-medium text-slate-600 dark:text-slate-300">
+            Durée en heures
+            <input
+              type="number"
+              min="1"
+              value={sessionDurationHours}
+              onChange={(event) => setSessionDurationHours(event.target.value)}
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={saveSessionPreferences}
+            className="rounded-2xl bg-primary-500 px-5 py-2 text-sm font-semibold text-white shadow shadow-primary-500/40 transition hover:bg-primary-400"
+          >
+            Enregistrer
+          </button>
+        </div>
+        {sessionFeedback && (
+          <p
+            className={classNames(
+              'mt-4 rounded-2xl px-4 py-3 text-sm',
+              sessionFeedback.type === 'success'
+                ? 'border border-emerald-400 bg-emerald-50 text-emerald-600 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-200'
+                : 'border border-rose-400 bg-rose-50 text-rose-600 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200'
+            )}
+          >
+            {sessionFeedback.message}
+          </p>
+        )}
       </div>
         </form>
         {categories?.length ? (

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/state/AuthContext.jsx';
 import { userApi } from '@/utils/apiClient';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 
 export default function LoginPage() {
   const { login, loading, error } = useAuth();
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState('');
   const [recovering, setRecovering] = useState(false);
   const [recoveryMsg, setRecoveryMsg] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -49,7 +51,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-3xl bg-white/10 p-10 backdrop-blur-lg shadow-2xl">
         <div className="mb-8 text-center">
           <p className="text-sm uppercase tracking-[0.35em] text-primary-300">Complexe scolaire</p>
-          <h1 className="mt-3 text-3xl font-bold text-white">Accès caissière</h1>
+          <h1 className="mt-3 text-3xl font-bold text-white">Connexion sécurisée</h1>
           <p className="mt-2 text-sm text-slate-300">
             Saisissez votre mot de passe pour accéder au tableau de bord financier.
           </p>
@@ -60,14 +62,24 @@ export default function LoginPage() {
             <label htmlFor="password" className="block text-sm font-medium text-slate-200">
               Mot de passe
             </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              className="mt-2 w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-white placeholder:text-white/50 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-400"
-            />
+            <div className="mt-2 relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 pr-12 text-white placeholder:text-white/50 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-400"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-3 flex items-center text-white/70 hover:text-white"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+              >
+                {showPassword ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
           {error && (
             <p className="rounded-xl border border-red-400 bg-red-50/20 px-4 py-3 text-sm text-red-200">

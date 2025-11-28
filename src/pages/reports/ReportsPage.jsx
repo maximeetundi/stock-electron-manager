@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import FiltersPanel from './components/FiltersPanel.jsx';
 import TotalsSection from './components/TotalsSection.jsx';
 import TransactionsSection from './components/TransactionsSection.jsx';
-import { categoriesApi, fileApi, transactionsApi, appApi } from '@/utils/apiClient';
+import { categoriesApi, fileApi, transactionsApi } from '@/utils/apiClient';
 import { arrayBufferToBase64 } from '@/utils/file';
 import { utils as XLSXUtils, write as writeWorkbook } from 'xlsx';
 import jsPDF from 'jspdf';
@@ -379,8 +379,6 @@ export default function ReportsPage() {
         return;
       }
       const branding = await loadDocumentBranding();
-      let orgName = 'Ecole Finances';
-      try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
       const isEntryOnly = filters.typeFilter === 'ENTREE';
       const isExitOnly = filters.typeFilter === 'SORTIE';
       const includeEntries = !isExitOnly;
@@ -393,7 +391,7 @@ export default function ReportsPage() {
       // Titre plus visible en PDF
       const contentStartY = pdfBranding.contentStartY;
       doc.setFontSize(18);
-      doc.text(`Rapport financier`, 14, contentStartY);
+      doc.text('Rapport financier', 14, contentStartY);
       doc.setFontSize(11);
       const periodLabelText = filters.period === 'custom'
         ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
@@ -509,15 +507,13 @@ export default function ReportsPage() {
       if (!filePath) {
         return;
       }
-      let orgName = 'Ecole Finances';
-      try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
       const isEntryOnly = filters.typeFilter === 'ENTREE';
       const isExitOnly = filters.typeFilter === 'SORTIE';
       const includeEntries = !isExitOnly;
       const includeSorties = !isEntryOnly;
       const workbook = XLSXUtils.book_new();
       // Ajoute un titre et des informations de contexte en tête de feuille
-      const title = `Rapport financier`;
+      const title = 'Rapport financier';
       const infoPeriod = filters.period === 'custom'
         ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
         : `Période : ${formatPeriodLabel(filters)}`;
@@ -619,9 +615,6 @@ export default function ReportsPage() {
     try {
       const branding = await loadDocumentBranding();
       const { headerHtml, footerHtml, styles: brandingStyles } = getPrintBrandingBlocks(branding);
-      let orgName = 'Ecole Finances';
-      try { const s = await appApi.getSettings(); if (s?.org_name) orgName = s.org_name; } catch {}
-      
       const periodLabelText = filters.period === 'custom'
         ? `Période personnalisée du ${filters.startDate || '—'} au ${filters.endDate || '—'}`
         : `Période: ${formatPeriodLabel(filters)}`;

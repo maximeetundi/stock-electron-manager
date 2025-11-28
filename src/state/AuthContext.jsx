@@ -1,14 +1,73 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { authApi, appApi } from '@/utils/apiClient';
 
 const AuthContext = createContext();
+const SESSION_STORAGE_KEY = 'ef-session';
+const SESSION_DURATION_KEY = 'ef-session-duration';
+const DEFAULT_SESSION_HOURS = 24;
+
+const readStoredSession = () => {
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
+const readStoredDuration = () => {
+  try {
+    const raw = window.localStorage.getItem(SESSION_DURATION_KEY);
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_SESSION_HOURS;
+};
 
 export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [theme, setTheme] = useState('light');
+  const [sessionDurationHours, setSessionDurationHours] = useState(readStoredDuration);
+  const expiryTimeoutRef = useRef(null);
+
+  const clearExpiryTimeout = useCallback(() => {
+    if (expiryTimeoutRef.current) {
+      clearTimeout(expiryTimeoutRef.current);
+      expiryTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleExpiry = useCallback(
+    (expiresAt) => {
+      clearExpiryTimeout();
+      const delay = Math.max(expiresAt - Date.now(), 0);
+      if (Number.isFinite(delay)) {
+        expiryTimeoutRef.current = setTimeout(() => {
+          window.localStorage.removeItem(SESSION_STORAGE_KEY);
+          setIsAuthenticated(false);
+        }, delay);
+      }
+    },
+    [clearExpiryTimeout]
+  );
+
+  const persistSession = useCallback(
+    (durationHours) => {
+      const safeHours = Number.isFinite(durationHours) && durationHours > 0 ? durationHours : DEFAULT_SESSION_HOURS;
+      const expiresAt = Date.now() + safeHours * 60 * 60 * 1000;
+      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ expiresAt }));
+      scheduleExpiry(expiresAt);
+    },
+    [scheduleExpiry]
+  );
 
   const login = useCallback(async (password) => {
     setLoading(true);
@@ -16,6 +75,7 @@ export function AuthProvider({ children }) {
     try {
       await authApi.login(password);
       setIsAuthenticated(true);
+       persistSession(sessionDurationHours);
       return true;
     } catch (err) {
       setError(err.message || 'Mot de passe incorrect');
@@ -26,8 +86,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    clearExpiryTimeout();
     setIsAuthenticated(false);
-  }, []);
+  }, [clearExpiryTimeout]);
 
   const toggleTheme = useCallback(async () => {
     try {
@@ -59,8 +121,51 @@ export function AuthProvider({ children }) {
       if (unsubscribe) {
         unsubscribe();
       }
+      clearExpiryTimeout();
     };
-  }, [fetchTheme]);
+  }, [fetchTheme, clearExpiryTimeout]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await appApi.getSettings();
+        const hours = Number(settings?.session_duration_hours);
+        if (Number.isFinite(hours) && hours > 0) {
+          setSessionDurationHours(hours);
+          window.localStorage.setItem(SESSION_DURATION_KEY, String(hours));
+        }
+      } catch {
+        // ignore: fallback already set
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const stored = readStoredSession();
+    if (stored?.expiresAt && stored.expiresAt > Date.now()) {
+      setIsAuthenticated(true);
+      scheduleExpiry(stored.expiresAt);
+    } else if (stored) {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  }, [scheduleExpiry]);
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (typeof event.detail === 'number' && event.detail > 0) {
+        setSessionDurationHours(event.detail);
+        window.localStorage.setItem(SESSION_DURATION_KEY, String(event.detail));
+      }
+    };
+    window.addEventListener('ef-session-duration-updated', handler);
+    return () => window.removeEventListener('ef-session-duration-updated', handler);
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      persistSession(sessionDurationHours);
+    }
+  }, [isAuthenticated, sessionDurationHours, persistSession]);
 
   const value = useMemo(
     () => ({
@@ -70,9 +175,10 @@ export function AuthProvider({ children }) {
       login,
       logout,
       theme,
-      toggleTheme
+      toggleTheme,
+      sessionDurationHours
     }),
-    [isAuthenticated, loading, error, login, logout, theme, toggleTheme]
+    [isAuthenticated, loading, error, login, logout, theme, toggleTheme, sessionDurationHours]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

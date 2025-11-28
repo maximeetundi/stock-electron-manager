@@ -243,6 +243,18 @@ export default function BonsCommandePage() {
   };
 
   const exportPDF = async (bon) => {
+    let bonDetails = bon;
+    if (!Array.isArray(bon.items) || !bon.items.length) {
+      try {
+        const result = await window.api.bonsCommande.get(bon.id);
+        if (result.ok) {
+          bonDetails = result.data;
+        }
+      } catch (err) {
+        console.error('Erreur chargement détails bon pour export', err);
+      }
+    }
+    const items = Array.isArray(bonDetails?.items) ? bonDetails.items : [];
     const branding = await ensureBranding();
     const doc = new jsPDF();
     const pdfBranding = createPdfBranding(doc, branding);
@@ -258,52 +270,58 @@ export default function BonsCommandePage() {
 
     doc.setFontSize(11);
     yPos += 9;
-    doc.text(`Numéro: ${bon.numero}`, 20, yPos);
+    doc.text(`Numéro: ${bonDetails.numero}`, 20, yPos);
     yPos += 7;
-    doc.text(`Date: ${new Date(bon.date_commande).toLocaleDateString('fr-FR')}`, 20, yPos);
+    doc.text(`Date: ${new Date(bonDetails.date_commande).toLocaleDateString('fr-FR')}`, 20, yPos);
 
     doc.setFontSize(10);
     yPos += 10;
     const hasSupplierInfo = Boolean(
-      bon.fournisseur_nom ||
-      bon.fournisseur_adresse ||
-      bon.fournisseur_telephone
+      bonDetails.fournisseur_nom ||
+      bonDetails.fournisseur_adresse ||
+      bonDetails.fournisseur_telephone
     );
 
     if (hasSupplierInfo) {
       doc.text('Fournisseur:', 20, yPos);
       doc.setFont(undefined, 'bold');
-      doc.text(bon.fournisseur_nom || '', 50, yPos);
+      doc.text(bonDetails.fournisseur_nom || '', 50, yPos);
       doc.setFont(undefined, 'normal');
 
       yPos += 6;
-      if (bon.fournisseur_adresse) {
+      if (bonDetails.fournisseur_adresse) {
         doc.text('Adresse:', 20, yPos);
-        doc.text(bon.fournisseur_adresse, 50, yPos);
+        doc.text(bonDetails.fournisseur_adresse, 50, yPos);
         yPos += 6;
       }
 
-      if (bon.fournisseur_telephone) {
+      if (bonDetails.fournisseur_telephone) {
         doc.text('Téléphone:', 20, yPos);
-        doc.text(bon.fournisseur_telephone, 50, yPos);
+        doc.text(bonDetails.fournisseur_telephone, 50, yPos);
         yPos += 6;
       }
     }
 
     yPos += 8;
-    doc.text("Demande d'achat n° _____________   de _____________", 20, yPos);
+    doc.text("Demande d'achat n°", 20, yPos);
     yPos += 7;
-    doc.text('Date de livraison: _______________', 20, yPos);
+    doc.text('Date de livraison:', 20, yPos);
 
     const tableStartY = Math.max(pdfBranding.contentStartY, yPos + 10);
-    const tableData = bon.items.map(item => [
-      item.code || item.designation,
-      item.designation,
-      item.unite || '',
-      item.quantite,
-      item.prix_unitaire.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' '),
-      item.montant.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
-    ]);
+    const tableData = items.map(item => {
+      const prix = Number(item.prix_unitaire) || 0;
+      const quantite = Number(item.quantite) || 0;
+      const montant = Number(item.montant ?? quantite * prix) || 0;
+      const formatNumber = (value) => value.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+      return [
+        item.code || item.designation || '',
+        item.designation || '',
+        item.unite || item.article_unite || '',
+        quantite,
+        formatNumber(prix),
+        formatNumber(montant)
+      ];
+    });
 
     doc.autoTable({
       startY: tableStartY,
@@ -337,21 +355,30 @@ export default function BonsCommandePage() {
       didDrawPage: () => pdfBranding.applyOnPage()
     });
 
-    const finalY = doc.lastAutoTable.finalY + 6;
+    const finalY = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 6 : tableStartY;
     doc.setFontSize(11);
     doc.setFont(undefined, 'bold');
-    const montantFormate = bon.montant_total.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    const totalAmount = Number(bonDetails.montant_total) || items.reduce((sum, item) => {
+      const prix = Number(item.prix_unitaire) || 0;
+      const quantite = Number(item.quantite) || 0;
+      return sum + prix * quantite;
+    }, 0);
+    const montantFormate = totalAmount.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
     doc.text(`MONTANT TOTAL: ${montantFormate} FCFA`, centerX, finalY, { align: 'center' });
     doc.setFont(undefined, 'normal');
 
     let notesY = finalY + 10;
-    if (bon.observations) {
+    if (bonDetails.observations) {
       doc.setFontSize(9);
       doc.text('Observations :', 20, notesY);
-      doc.text(bon.observations, 20, notesY + 5, { maxWidth: 170 });
+      doc.text(bonDetails.observations, 20, notesY + 5, { maxWidth: 170 });
     }
 
-    doc.save(`bon-commande-${bon.numero}.pdf`);
+    const now = new Date();
+    const pad = (value) => String(value).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const randomId = Math.random().toString(36).slice(2, 6).toUpperCase();
+    doc.save(`bon-commande-${bonDetails.numero}-${timestamp}-${randomId}.pdf`);
   };
 
   const generateBonPrintHtml = (bon, items, fournisseur, branding) => {
@@ -405,17 +432,20 @@ export default function BonsCommandePage() {
             .status-en_cours { background-color: #dbeafe; color: #1e40af; }
             .status-livree { background-color: #dcfce7; color: #166534; }
             .status-annulee { background-color: #fee2e2; color: #991b1b; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #e2e8f0; }
-            th { background-color: #f1f5f9; padding: 10px; text-align: left; font-weight: bold; border: 1px solid #e2e8f0; }
-            td { padding: 8px 10px; border: 1px solid #e2e8f0; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #0f172a; }
+            th { background-color: #f1f5f9; padding: 10px; text-align: left; font-weight: bold; border: 1px solid #0f172a; }
+            td { padding: 8px 10px; border: 1px solid #0f172a; }
             .total-row { font-weight: bold; background-color: #f8fafc; }
+            .grand-total-row td { font-weight: bold; background-color: #f8fafc; }
+            .grand-total-label { text-transform: uppercase; letter-spacing: 0.5px; }
+            .grand-total-value { text-align: right; }
           </style>
         </head>
         <body>
           ${headerHtml}
           <div class="header">
-            <h1><u><b>Bon de Commande</b></u></h1>
-            <p>N° ${bon.numero} - Imprimé le ${new Date().toLocaleDateString('fr-FR')}</p>
+            <h1>Bon de Commande</h1>
+            <p>N° ${bon.numero} - Imprimé le ${new Date().toLocaleString('fr-FR')}</p>
           </div>
           
           <div class="content">
@@ -427,7 +457,7 @@ export default function BonsCommandePage() {
               </div>
               <div class="field">
                 <div class="field-label">Date:</div>
-                <div class="field-value">${new Date(bon.date_commande).toLocaleDateString('fr-FR')}</div>
+                <div class="field-value">${new Date(bon.date_commande).toLocaleString('fr-FR')}</div>
               </div>
               <div class="field">
                 <div class="field-label">Statut:</div>
@@ -463,9 +493,9 @@ export default function BonsCommandePage() {
                     <td style="text-align: right;">${(item.quantite * item.prix_unitaire).toLocaleString('fr-FR')} FCFA</td>
                   </tr>
                   `).join('')}
-                  <tr class="total-row">
-                    <td colspan="4" style="text-align: right;">Montant total:</td>
-                    <td style="text-align: right;">${bon.montant_total.toLocaleString('fr-FR')} FCFA</td>
+                  <tr class="grand-total-row">
+                    <td colspan="4" class="grand-total-label">Montant total</td>
+                    <td colspan="2" class="grand-total-value">${bon.montant_total.toLocaleString('fr-FR')} FCFA</td>
                   </tr>
                 </tbody>
               </table>
@@ -479,7 +509,7 @@ export default function BonsCommandePage() {
             ` : ''}
 
           </div>
-          <b>${footerHtml}</b>
+          ${footerHtml}
           <div class="doc-branding-footnote">Ce document a été généré automatiquement par le système de gestion de stock.</div>
         </body>
         </html>

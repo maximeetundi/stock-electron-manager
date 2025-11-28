@@ -1,5 +1,13 @@
 import { formatCurrency, formatDate, formatTime } from '@/utils/format';
 
+const parseDate = (value) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 export const formatPeriodLabel = ({ period, referenceDate, startDate, endDate }) => {
   const intlDay = new Intl.DateTimeFormat('fr-FR', {
     day: '2-digit',
@@ -10,12 +18,15 @@ export const formatPeriodLabel = ({ period, referenceDate, startDate, endDate })
     month: 'long',
     year: 'numeric'
   });
+  const fallbackReference = parseDate(referenceDate) ?? new Date();
+  const start = parseDate(startDate);
+  const end = parseDate(endDate);
 
   switch (period) {
     case 'day':
-      return `Journée du ${intlDay.format(new Date(referenceDate))}`;
+      return `Journée du ${intlDay.format(fallbackReference)}`;
     case 'week': {
-      const base = new Date(referenceDate);
+      const base = new Date(fallbackReference);
       const monday = new Date(base);
       const sunday = new Date(base);
       const currentDay = base.getDay() || 7;
@@ -24,22 +35,22 @@ export const formatPeriodLabel = ({ period, referenceDate, startDate, endDate })
       return `Semaine du ${intlDay.format(monday)} au ${intlDay.format(sunday)}`;
     }
     case 'month':
-      return `Mois de ${intlMonth.format(new Date(referenceDate))}`;
+      return `Mois de ${intlMonth.format(fallbackReference)}`;
     case 'quarter': {
-      const date = new Date(referenceDate);
+      const date = new Date(fallbackReference);
       const quarter = Math.floor(date.getMonth() / 3) + 1;
       return `Trimestre ${quarter} ${date.getFullYear()}`;
     }
     case 'semester': {
-      const date = new Date(referenceDate);
+      const date = new Date(fallbackReference);
       const semester = date.getMonth() < 6 ? 'Premier' : 'Second';
       return `${semester} semestre ${date.getFullYear()}`;
     }
     case 'year':
-      return `Année ${new Date(referenceDate).getFullYear()}`;
+      return `Année ${fallbackReference.getFullYear()}`;
     case 'custom':
-      if (startDate && endDate) {
-        return `Du ${startDate} au ${endDate}`;
+      if (start && end) {
+        return `Du ${intlDay.format(start)} au ${intlDay.format(end)}`;
       }
       return 'Sélectionnez une plage de dates';
     default:
